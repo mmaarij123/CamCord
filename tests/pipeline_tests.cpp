@@ -33,6 +33,12 @@ struct PipelineTestAccess {
 };
 
 int wmain(int argc, wchar_t** argv) {
+    if (argc == 2 && std::wstring(argv[1]) == L"--slow-quit") {
+        std::string command;
+        std::getline(std::cin, command);
+        Sleep(16000);
+        return command == "q" ? 0 : 1;
+    }
     if (argc != 3) { std::cerr << "Usage: pipeline_tests.exe ffmpeg.exe output-folder\n"; return 2; }
     const std::wstring ffmpeg = argv[1]; const fs::path root = fs::absolute(argv[2]);
     fs::create_directories(root);
@@ -44,6 +50,33 @@ int wmain(int argc, wchar_t** argv) {
         run(L"-f lavfi -i color=c=blue:s=160x90:r=15 -t 2 -an -c:v libx264 -preset ultrafast -g 15 -pix_fmt yuv420p -movflags +frag_keyframe+empty_moov+default_base_moof " + QuoteArg(path.wstring()), path.filename().wstring());
     };
     try {
+        {
+            auto longDirectory = root / std::wstring(90, L'a') / std::wstring(90, L'b');
+            while (longDirectory.wstring().size() <= MAX_PATH + 20) longDirectory /= L"extra-path-component";
+            const fs::path extendedDirectory(L"\\\\?\\" + longDirectory.wstring());
+            fs::create_directories(extendedDirectory);
+            const auto engine = extendedDirectory / L"ffmpeg.exe";
+            { std::ofstream marker(engine, std::ios::binary); marker << "test-only engine marker"; }
+            const DWORD required = GetEnvironmentVariableW(L"PATH", nullptr, 0);
+            std::vector<wchar_t> originalPath(required ? required : 1);
+            if (required) GetEnvironmentVariableW(L"PATH", originalPath.data(), static_cast<DWORD>(originalPath.size()));
+            Check(SetEnvironmentVariableW(L"PATH", extendedDirectory.c_str()) != FALSE, "Could not set test-only engine search path");
+            const auto discovered = FindFfmpeg();
+            SetEnvironmentVariableW(L"PATH", required ? originalPath.data() : nullptr);
+            Check(!discovered.empty() && fs::equivalent(discovered, engine), "Long engine search path was truncated");
+            std::cout << "PASS: recording engine discovery preserves paths longer than MAX_PATH\n";
+        }
+        {
+            std::vector<wchar_t> executable(32768);
+            const DWORD length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+            Check(length && length < executable.size(), "Could not locate synthetic child process");
+            ChildProcess delayed;
+            Check(delayed.Start(std::wstring(executable.data(), length), L"--slow-quit",
+                (root / L"slow-quit.log").wstring(), true), "Could not start synthetic delayed encoder");
+            Check(delayed.SendQuitAndWait(), "A clean encoder shutdown was killed at the old 15-second limit");
+            delayed.Close();
+            std::cout << "PASS: encoder draining beyond 15 seconds completes without termination\n";
+        }
         Check(TimelineFrame(120000000, 100000000, 48000) == 96000, "Leading audio silence calculation is wrong");
         Check(TimelineFrame(90000000, 100000000, 48000) == 0, "Pre-start audio timestamp underflowed");
         Check(TimelineFrame(100000000ull + 48ull * 3600 * 10000000, 100000000, 48000) == 48ull * 3600 * 48000, "Long capture timeline overflowed");

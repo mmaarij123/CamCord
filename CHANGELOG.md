@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1 — 2026-10-08
+
+- Removed the 15-second encoder shutdown limit so a valid capture can drain while the app remains responsive.
+- Fixed relative recording-engine paths in the native regression tests, including the GitHub release workflow.
+- Corrected recording-engine discovery for long application and PATH directories; enabled Windows long-path support.
+- Prevented packaging an installer whose version differs from the compiled application or source.
+- Added a regression test for encoder shutdown taking more than 15 seconds.
+
 ## 1.3.0 — 2026-10-08
 
 - Rebuilt the interface in React and Material UI with a responsive dark/coral design.

@@ -101,3 +101,5 @@ The GitHub Actions workflow builds the installer and checksum on manual dispatch
 | `installer/` | Per-user Inno Setup package |
 
 Third-party components retain their original licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the notices shipped with the app.
+
+The latest code review, corrected bugs and verification limits are documented in [AUDIT.md](AUDIT.md).

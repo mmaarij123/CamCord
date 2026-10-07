@@ -15,12 +15,22 @@ std::wstring QuoteArg(const std::wstring& value) {
 }
 
 std::wstring FindFfmpeg() {
-    wchar_t module[MAX_PATH]{};
-    GetModuleFileNameW(nullptr, module, MAX_PATH);
-    auto adjacent = std::filesystem::path(module).parent_path() / L"ffmpeg.exe";
-    if (std::filesystem::exists(adjacent)) return adjacent.wstring();
-    wchar_t found[MAX_PATH]{};
-    if (SearchPathW(nullptr, L"ffmpeg.exe", nullptr, MAX_PATH, found, nullptr)) return found;
+    std::vector<wchar_t> module(32768);
+    const DWORD count = GetModuleFileNameW(nullptr, module.data(), static_cast<DWORD>(module.size()));
+    std::error_code ec;
+    if (count && count < module.size()) {
+        auto adjacent = std::filesystem::path(std::wstring(module.data(), count)).parent_path() / L"ffmpeg.exe";
+        if (std::filesystem::is_regular_file(adjacent, ec) && !ec) return adjacent.wstring();
+    }
+    const DWORD required = SearchPathW(nullptr, L"ffmpeg.exe", nullptr, 0, nullptr, nullptr);
+    if (!required) return L"";
+    std::vector<wchar_t> found(static_cast<size_t>(required) + 1);
+    const DWORD length = SearchPathW(nullptr, L"ffmpeg.exe", nullptr, static_cast<DWORD>(found.size()), found.data(), nullptr);
+    if (length && length < found.size()) {
+        std::wstring path(found.data(), length);
+        ec.clear();
+        if (std::filesystem::is_regular_file(path, ec) && !ec) return path;
+    }
     return L"";
 }
 

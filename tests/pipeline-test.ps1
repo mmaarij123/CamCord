@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $Ffmpeg) { $Ffmpeg = Join-Path $projectRoot 'third_party\ffmpeg\ffmpeg.exe' }
 if (-not (Test-Path -LiteralPath $Ffmpeg)) { throw 'Pass -Ffmpeg with the path to ffmpeg.exe.' }
+$Ffmpeg = (Resolve-Path -LiteralPath $Ffmpeg).Path
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsRoot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if (-not $vsRoot) { throw 'Visual Studio C++ build tools are required.' }

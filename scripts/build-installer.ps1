@@ -1,8 +1,13 @@
-param([string]$Version = '1.3.0', [switch]$SkipBuild)
+param([string]$Version, [switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be numeric major.minor.patch.' }
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$sourceVersion = (Get-Content -LiteralPath (Join-Path $projectRoot 'ui\package.json') -Raw | ConvertFrom-Json).version
+if (-not $Version) { $Version = $sourceVersion }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be numeric major.minor.patch.' }
+if ($Version -ne $sourceVersion) { throw 'Installer version must match the source package version.' }
 if (-not $SkipBuild) { & (Join-Path $PSScriptRoot 'build-release.ps1') }
+$app = Get-Item -LiteralPath (Join-Path $projectRoot 'bin\Release\CamCord.exe')
+if ($app.VersionInfo.ProductVersion -ne $Version) { throw 'The Release executable is stale. Rebuild before packaging this version.' }
 & (Join-Path $PSScriptRoot 'setup-webview2-runtime.ps1')
 $candidates = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")
 $compiler = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1

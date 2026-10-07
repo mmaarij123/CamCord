@@ -23,7 +23,7 @@ for source in (ROOT / "src").glob("*.cpp"):
     require(source.name in project, f"{source.name} is missing from CamCord.vcxproj")
 
 package = json.loads(text("ui/package.json"))
-require(package["version"] == "1.3.0", "UI package version must match the release")
+require(re.fullmatch(r"\d+\.\d+\.\d+", package["version"]), "UI package version must be major.minor.patch")
 require((ROOT / "ui/package-lock.json").is_file(), "locked frontend dependencies are required")
 
 resource = text("resources.rc")
@@ -31,10 +31,15 @@ numeric = re.search(r"FILEVERSION\s+(\d+),(\d+),(\d+),(\d+)", resource)
 string = re.search(r'VALUE "FileVersion",\s*"([0-9.]+)(?:\\0)?"', resource)
 require(numeric and ".".join(numeric.groups()[:3]) == package["version"],
         "numeric executable version must match ui/package.json")
-require(string and string.group(1).rstrip(".0") == package["version"].rstrip(".0"),
+require(string and string.group(1) == package["version"],
         "string executable version must match ui/package.json")
 
 installer = text("installer/CamCord.iss")
+installer_version = re.search(r'#define MyAppVersion "([0-9.]+)"', installer)
+require(installer_version and installer_version.group(1) == package["version"], "installer version must match ui/package.json")
+manifest = ET.parse(ROOT / "app.manifest")
+identity = manifest.find("{urn:schemas-microsoft-com:asm.v1}assemblyIdentity")
+require(identity is not None and identity.get("version") == package["version"] + ".0", "manifest version must match ui/package.json")
 require("MinVersion=10.0.19041" in installer, "installer minimum Windows version is inconsistent")
 require("FFmpegArchiveHash" in installer and "FFmpegBinaryHash" in installer,
         "installer must verify the downloaded recording engine")

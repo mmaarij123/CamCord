@@ -9,7 +9,9 @@ public:
     ChildProcess(const ChildProcess&) = delete;
     ChildProcess& operator=(const ChildProcess&) = delete;
     bool Start(const std::wstring& executable, const std::wstring& arguments, const std::wstring& logPath, bool interactive);
-    bool SendQuitAndWait(DWORD timeoutMs = 15000);
+    // Capture shutdown drains the encoder on a background worker. A fixed time
+    // limit would kill valid long recordings before their final frames flush.
+    bool SendQuitAndWait(DWORD timeoutMs = INFINITE);
     DWORD Wait(DWORD timeoutMs = INFINITE);
     DWORD ExitCode() const;
     bool Running() const;
