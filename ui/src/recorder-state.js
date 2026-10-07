@@ -1,0 +1,50 @@
+export const INITIAL_STATE = {
+  state: 'idle',
+  elapsedSeconds: 0,
+  settings: { height: 1080, fps: 60, systemAudio: true, microphone: false },
+  encoder: '',
+  outputFolder: 'Videos / CamCord Captures',
+  lastOutput: '',
+  captureExcluded: false,
+};
+
+export const STATE_LABELS = {
+  idle: 'Ready to record',
+  starting: 'Preparing recorder',
+  recording: 'Recording',
+  pausing: 'Pausing capture',
+  paused: 'Paused',
+  resuming: 'Resuming capture',
+  saving: 'Saving capture',
+};
+
+export function formatElapsed(value) {
+  const seconds = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  return [Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60), seconds % 60]
+    .map((part) => String(part).padStart(2, '0'))
+    .join(':');
+}
+
+export function updateSettings(current, changes) {
+  const settings = { ...current, ...changes };
+  if (settings.height !== 1080 && settings.fps === 120) settings.fps = 60;
+  return settings;
+}
+
+export function parseStateMessage(data) {
+  try {
+    const message = typeof data === 'string' ? JSON.parse(data) : data;
+    if (!message || message.type !== 'state' || !Object.hasOwn(STATE_LABELS, message.state)) return null;
+    return message;
+  } catch {
+    return null;
+  }
+}
+
+export function mergeState(previous, message) {
+  return {
+    ...previous,
+    ...message,
+    settings: { ...previous.settings, ...message.settings },
+  };
+}

@@ -1,0 +1,50 @@
+#pragma once
+#include <windows.h>
+#include <wrl.h>
+#include <WebView2.h>
+#include <future>
+#include <string>
+#include "RecordingManager.h"
+#include "SettingsManager.h"
+
+class MainWindow {
+public:
+    bool Create(HINSTANCE instance, int showCommand);
+    int Run();
+private:
+    enum class Action { None, Initialize, Start, Pause, Resume, Stop, SetFolder };
+    struct ActionResult { OperationResult result; RecordingSettings settings; };
+    static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    void InitializeWebView();
+    void UpdateWebViewBounds();
+    void HandleWebMessage(const std::wstring& message);
+    void BeginAction(Action action, const std::wstring& folder = L"");
+    void PollAction();
+    void UpdateSnapshot();
+    void SendState(bool force = false);
+    void ChooseOutputFolder();
+    void SetNotice(std::wstring severity, std::wstring text);
+    void ReportFatal(std::wstring text);
+    void SaveSettings();
+    HWND hwnd_ = nullptr;
+    HINSTANCE instance_ = nullptr;
+    Microsoft::WRL::ComPtr<ICoreWebView2Controller> webViewController_;
+    Microsoft::WRL::ComPtr<ICoreWebView2> webView_;
+    EventRegistrationToken webMessageToken_{};
+    SettingsManager settingsManager_;
+    RecordingManager recorder_;
+    RecordingSettings settings_;
+    std::future<ActionResult> task_;
+    Action pending_ = Action::None;
+    RecorderState snapshotState_ = RecorderState::Idle;
+    unsigned long long elapsedSeconds_ = 0;
+    std::wstring encoder_, outputFolder_, lastOutput_, lastStateJson_;
+    std::wstring noticeSeverity_, noticeText_, fatalError_;
+    bool webReady_ = false;
+    bool closeRequested_ = false;
+    bool unexpectedStop_ = false;
+    bool folderDialogOpen_ = false;
+    bool captureExcluded_ = false;
+    bool fatalCloseRequested_ = false;
+};

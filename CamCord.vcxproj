@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion><Keyword>Win32Proj</Keyword><ProjectGuid>{9EAA0404-8F21-42DC-9B15-5F5817C54AC9}</ProjectGuid>
+    <RootNamespace>CamCord</RootNamespace><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion><ProjectName>CamCord</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration"><ConfigurationType>Application</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration"><ConfigurationType>Application</ConfigurationType><UseDebugLibraries>false</UseDebugLibraries><PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset><WholeProgramOptimization>true</WholeProgramOptimization><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup><WebView2Root>$(MSBuildProjectDirectory)\third_party\webview2</WebView2Root></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><AdditionalIncludeDirectories>$(WebView2Root)\build\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <Link><AdditionalLibraryDirectories>$(WebView2Root)\build\native\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories></Link>
+    <PostBuildEvent><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(MSBuildProjectDirectory)\scripts\stage-runtime.ps1" -Configuration "$(Configuration)"</Command></PostBuildEvent>
+  </ItemDefinitionGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><OutDir>$(SolutionDir)bin\Debug\</OutDir><IntDir>$(SolutionDir)obj\Debug\</IntDir><TargetName>CamCord</TargetName></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><OutDir>$(SolutionDir)bin\Release\</OutDir><IntDir>$(SolutionDir)obj\Release\</IntDir><TargetName>CamCord</TargetName></PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary><PreprocessorDefinitions>_DEBUG;UNICODE;_UNICODE;NOMINMAX;WIN32_LEAN_AND_MEAN;WINVER=0x0A00;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions><LanguageStandard>stdcpp17</LanguageStandard><AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions></ClCompile>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>WebView2LoaderStatic.lib;ole32.lib;oleaut32.lib;shlwapi.lib;version.lib;shell32.lib;uuid.lib;avrt.lib;comctl32.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile><WarningLevel>Level4</WarningLevel><FunctionLevelLinking>true</FunctionLevelLinking><IntrinsicFunctions>true</IntrinsicFunctions><SDLCheck>true</SDLCheck><RuntimeLibrary>MultiThreaded</RuntimeLibrary><PreprocessorDefinitions>NDEBUG;UNICODE;_UNICODE;NOMINMAX;WIN32_LEAN_AND_MEAN;WINVER=0x0A00;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions><LanguageStandard>stdcpp17</LanguageStandard><AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions></ClCompile>
+    <Link><SubSystem>Windows</SubSystem><EnableCOMDATFolding>true</EnableCOMDATFolding><OptimizeReferences>true</OptimizeReferences><AdditionalDependencies>WebView2LoaderStatic.lib;ole32.lib;oleaut32.lib;shlwapi.lib;version.lib;shell32.lib;uuid.lib;avrt.lib;comctl32.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\App.cpp" /><ClCompile Include="src\MainWindow.cpp" /><ClCompile Include="src\OutputManager.cpp" />
+    <ClCompile Include="src\SettingsManager.cpp" /><ClCompile Include="src\Process.cpp" /><ClCompile Include="src\HardwareEncoderDetector.cpp" />
+    <ClCompile Include="src\AudioCaptureEngine.cpp" /><ClCompile Include="src\CaptureEngine.cpp" /><ClCompile Include="src\RecordingManager.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\MainWindow.h" /><ClInclude Include="src\OutputManager.h" /><ClInclude Include="src\SettingsManager.h" />
+    <ClInclude Include="src\Process.h" /><ClInclude Include="src\HardwareEncoderDetector.h" /><ClInclude Include="src\AudioCaptureEngine.h" />
+    <ClInclude Include="src\CaptureEngine.h" /><ClInclude Include="src\RecordingManager.h" /><ClInclude Include="src\RecordingTypes.h" /><ClInclude Include="src\ComPtr.h" />
+  </ItemGroup>
+  <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
+  <ItemGroup><ResourceCompile Include="resources.rc" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

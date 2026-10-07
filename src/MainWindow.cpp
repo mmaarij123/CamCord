@@ -1,0 +1,451 @@
+#include "MainWindow.h"
+#include <dwmapi.h>
+#include <shellapi.h>
+#include <shlobj.h>
+#include <shobjidl.h>
+#include <filesystem>
+#include <cwctype>
+#include <sstream>
+#include <vector>
+
+using Microsoft::WRL::Callback;
+using Microsoft::WRL::ComPtr;
+
+namespace {
+constexpr UINT_PTR TIMER_RECORDING = 1;
+constexpr UINT WM_CHOOSE_FOLDER = WM_APP + 1;
+constexpr UINT WM_FATAL_ERROR = WM_APP + 2;
+constexpr wchar_t APP_URL[] = L"https://app.camcord/index.html";
+
+std::wstring ExecutableDirectory() {
+    std::vector<wchar_t> path(32768);
+    const DWORD count = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+    return std::filesystem::path(std::wstring(path.data(), count)).parent_path().wstring();
+}
+
+std::wstring WebViewDataDirectory() {
+    PWSTR local = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &local)) || !local) return L"";
+    const auto path = (std::filesystem::path(local) / L"CamCord" / L"WebView2").wstring();
+    CoTaskMemFree(local);
+    return path;
+}
+
+size_t JsonValueStart(const std::wstring& json, const wchar_t* key) {
+    const auto position = json.find(L"\"" + std::wstring(key) + L"\"");
+    if (position == std::wstring::npos) return position;
+    auto start = json.find(L':', position);
+    if (start == std::wstring::npos) return start;
+    while (++start < json.size() && iswspace(json[start])) {}
+    return start;
+}
+
+std::wstring JsonString(const std::wstring& json, const wchar_t* key) {
+    auto position = JsonValueStart(json, key);
+    if (position >= json.size() || json[position] != L'"') return L"";
+    const auto end = json.find(L'"', position + 1);
+    return end == std::wstring::npos ? L"" : json.substr(position + 1, end - position - 1);
+}
+
+int JsonInteger(const std::wstring& json, const wchar_t* key, int fallback) {
+    const auto position = JsonValueStart(json, key);
+    if (position >= json.size()) return fallback;
+    try { return std::stoi(json.substr(position)); } catch (...) { return fallback; }
+}
+
+bool JsonBoolean(const std::wstring& json, const wchar_t* key, bool fallback) {
+    const auto position = JsonValueStart(json, key);
+    if (position >= json.size()) return fallback;
+    if (json.compare(position, 4, L"true") == 0) return true;
+    if (json.compare(position, 5, L"false") == 0) return false;
+    return fallback;
+}
+
+std::wstring JsonEscape(const std::wstring& value) {
+    std::wstring result;
+    constexpr wchar_t digits[] = L"0123456789abcdef";
+    for (const wchar_t c : value) {
+        if (c == L'\\' || c == L'"') { result += L'\\'; result += c; }
+        else if (c < 32) { result += L"\\u00"; result += digits[(c >> 4) & 15]; result += digits[c & 15]; }
+        else result += c;
+    }
+    return result;
+}
+
+RecordingSettings SettingsFromJson(const std::wstring& json, RecordingSettings settings) {
+    settings.height = JsonInteger(json, L"height", settings.height);
+    if (settings.height != 480 && settings.height != 720 && settings.height != 1080) settings.height = 1080;
+    settings.width = settings.height == 480 ? 854 : settings.height == 720 ? 1280 : 1920;
+    settings.fps = JsonInteger(json, L"fps", settings.fps);
+    if (settings.fps != 15 && settings.fps != 30 && settings.fps != 60 && settings.fps != 120) settings.fps = 60;
+    if (settings.height != 1080 && settings.fps == 120) settings.fps = 60;
+    settings.systemAudio = JsonBoolean(json, L"systemAudio", settings.systemAudio);
+    settings.microphone = JsonBoolean(json, L"microphone", settings.microphone);
+    return settings;
+}
+}
+
+bool MainWindow::Create(HINSTANCE instance, int showCommand) {
+    instance_ = instance;
+    settings_ = settingsManager_.Load();
+    recorder_.SetOutputFolder(settings_.outputFolder);
+    outputFolder_ = settings_.outputFolder;
+    WNDCLASSEXW wc{ sizeof(wc) };
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = instance;
+    wc.lpszClassName = L"CamCordMainWindow";
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    if (!RegisterClassExW(&wc)) return false;
+    const UINT dpi = GetDpiForSystem();
+    RECT rect{ 0, 0, MulDiv(1040, dpi, 96), MulDiv(740, dpi, 96) };
+    AdjustWindowRectExForDpi(&rect, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi);
+    hwnd_ = CreateWindowExW(0, wc.lpszClassName, L"CamCord", WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
+        nullptr, nullptr, instance, this);
+    if (!hwnd_) return false;
+    BOOL dark = TRUE;
+    DwmSetWindowAttribute(hwnd_, 20, &dark, sizeof(dark));
+    captureExcluded_ = SetWindowDisplayAffinity(hwnd_, WDA_EXCLUDEFROMCAPTURE) != FALSE;
+    ShowWindow(hwnd_, showCommand);
+    UpdateWindow(hwnd_);
+    return true;
+}
+
+int MainWindow::Run() {
+    MSG message{};
+    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+    return static_cast<int>(message.wParam);
+}
+
+LRESULT CALLBACK MainWindow::WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (message == WM_NCCREATE) {
+        self = static_cast<MainWindow*>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams);
+        self->hwnd_ = hwnd;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+    }
+    return self ? self->HandleMessage(message, wParam, lParam) : DefWindowProcW(hwnd, message, wParam, lParam);
+}
+
+void MainWindow::ReportFatal(std::wstring text) {
+    fatalError_ = std::move(text);
+    PostMessageW(hwnd_, WM_FATAL_ERROR, 0, 0);
+}
+
+void MainWindow::InitializeWebView() {
+    const auto uiFolder = std::filesystem::path(ExecutableDirectory()) / L"ui";
+    std::error_code ec;
+    if (!std::filesystem::exists(uiFolder / L"index.html", ec)) {
+        ReportFatal(L"The CamCord interface files are missing. Reinstall CamCord.");
+        return;
+    }
+    const auto data = WebViewDataDirectory();
+    const auto hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, data.empty() ? nullptr : data.c_str(), nullptr,
+        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+            [this, uiFolder](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
+                if (!IsWindow(hwnd_)) return S_OK;
+                if (FAILED(result) || !environment) {
+                    ReportFatal(L"Microsoft Edge WebView2 Runtime could not start. Reinstall the runtime or rerun CamCord setup.");
+                    return S_OK;
+                }
+                const auto controllerHr = environment->CreateCoreWebView2Controller(hwnd_,
+                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                        [this, uiFolder](HRESULT controllerResult, ICoreWebView2Controller* controller) -> HRESULT {
+                            if (!IsWindow(hwnd_)) return S_OK;
+                            if (FAILED(controllerResult) || !controller) { ReportFatal(L"CamCord could not create its interface."); return S_OK; }
+                            webViewController_ = controller;
+                            controller->get_CoreWebView2(webView_.ReleaseAndGetAddressOf());
+                            if (!webView_) { ReportFatal(L"CamCord could not initialize its interface."); return S_OK; }
+                            ComPtr<ICoreWebView2Settings> preferences;
+                            webView_->get_Settings(preferences.ReleaseAndGetAddressOf());
+                            if (preferences) {
+                                preferences->put_AreDefaultContextMenusEnabled(FALSE);
+                                preferences->put_AreDevToolsEnabled(FALSE);
+                                preferences->put_IsStatusBarEnabled(FALSE);
+                                preferences->put_IsZoomControlEnabled(FALSE);
+                            }
+                            webView_->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                                [this](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                    LPWSTR source = nullptr;
+                                    const bool trusted = SUCCEEDED(args->get_Source(&source)) && source && std::wstring(source) == APP_URL;
+                                    CoTaskMemFree(source);
+                                    if (!trusted) return S_OK;
+                                    LPWSTR message = nullptr;
+                                    if (SUCCEEDED(args->TryGetWebMessageAsString(&message)) && message) {
+                                        if (wcslen(message) <= 4096) HandleWebMessage(message);
+                                        CoTaskMemFree(message);
+                                    }
+                                    return S_OK;
+                                }).Get(), &webMessageToken_);
+                            EventRegistrationToken token{};
+                            webView_->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>(
+                                [](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                                    LPWSTR uri = nullptr;
+                                    if (SUCCEEDED(args->get_Uri(&uri))) {
+                                        if (!uri || std::wstring(uri) != APP_URL) args->put_Cancel(TRUE);
+                                        CoTaskMemFree(uri);
+                                    }
+                                    return S_OK;
+                                }).Get(), &token);
+                            webView_->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                                [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                                    args->put_Handled(TRUE); return S_OK;
+                                }).Get(), &token);
+                            ComPtr<ICoreWebView2_3> view3;
+                            if (FAILED(webView_.As(&view3)) || FAILED(view3->SetVirtualHostNameToFolderMapping(
+                                L"app.camcord", uiFolder.c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS))) {
+                                ReportFatal(L"Update Microsoft Edge WebView2 Runtime to display CamCord.");
+                                return S_OK;
+                            }
+                            UpdateWebViewBounds();
+                            webViewController_->put_IsVisible(TRUE);
+                            if (FAILED(webView_->Navigate(APP_URL))) ReportFatal(L"CamCord could not load its interface.");
+                            return S_OK;
+                        }).Get());
+                if (FAILED(controllerHr)) ReportFatal(L"CamCord could not create its interface.");
+                return S_OK;
+            }).Get());
+    if (FAILED(hr)) ReportFatal(L"Microsoft Edge WebView2 Runtime is required. Rerun CamCord setup.");
+}
+
+void MainWindow::UpdateWebViewBounds() {
+    if (webViewController_) { RECT rect{}; GetClientRect(hwnd_, &rect); webViewController_->put_Bounds(rect); }
+}
+
+void MainWindow::SetNotice(std::wstring severity, std::wstring text) {
+    noticeSeverity_ = std::move(severity);
+    noticeText_ = std::move(text);
+}
+
+void MainWindow::SaveSettings() {
+    const auto result = settingsManager_.Save(settings_);
+    if (!result.ok) SetNotice(L"error", result.message);
+}
+
+void MainWindow::UpdateSnapshot() {
+    // The recorder is owned exclusively by the worker while an operation is pending.
+    if (pending_ != Action::None) return;
+    snapshotState_ = recorder_.State();
+    elapsedSeconds_ = recorder_.ElapsedSeconds();
+    encoder_ = recorder_.EncoderLabel();
+    outputFolder_ = recorder_.CaptureFolder();
+    lastOutput_ = recorder_.LastOutput();
+}
+
+void MainWindow::SendState(bool force) {
+    if (!webReady_ || !webView_) return;
+    std::wstring state = L"idle";
+    if (pending_ == Action::Stop) state = L"saving";
+    else if (pending_ == Action::Pause) state = L"pausing";
+    else if (pending_ == Action::Resume) state = L"resuming";
+    else if (pending_ != Action::None) state = L"starting";
+    else if (snapshotState_ == RecorderState::Recording) state = L"recording";
+    else if (snapshotState_ == RecorderState::Paused) state = L"paused";
+    const auto lastName = lastOutput_.empty() ? L"" : std::filesystem::path(lastOutput_).filename().wstring();
+    std::wostringstream json;
+    json << L"{\"type\":\"state\",\"state\":\"" << state << L"\",\"elapsedSeconds\":" << elapsedSeconds_
+        << L",\"settings\":{\"height\":" << settings_.height << L",\"fps\":" << settings_.fps
+        << L",\"systemAudio\":" << (settings_.systemAudio ? L"true" : L"false")
+        << L",\"microphone\":" << (settings_.microphone ? L"true" : L"false")
+        << L"},\"encoder\":\"" << JsonEscape(encoder_) << L"\",\"outputFolder\":\""
+        << JsonEscape(outputFolder_.empty() ? L"Videos / CamCord Captures" : outputFolder_)
+        << L"\",\"lastOutput\":\"" << JsonEscape(lastName) << L"\",\"captureExcluded\":"
+        << (captureExcluded_ ? L"true" : L"false");
+    if (!noticeText_.empty()) json << L",\"notice\":{\"severity\":\"" << JsonEscape(noticeSeverity_)
+        << L"\",\"text\":\"" << JsonEscape(noticeText_) << L"\"}";
+    json << L"}";
+    const auto payload = json.str();
+    if (force || payload != lastStateJson_) {
+        if (SUCCEEDED(webView_->PostWebMessageAsJson(payload.c_str()))) {
+            lastStateJson_ = payload; noticeText_.clear(); noticeSeverity_.clear();
+        }
+    }
+}
+
+void MainWindow::BeginAction(Action action, const std::wstring& folder) {
+    if (pending_ != Action::None) return;
+    UpdateSnapshot();
+    pending_ = action;
+    SendState();
+    ShutdownBlockReasonCreate(hwnd_, L"CamCord is recording or saving a video. Finish saving before shutting down.");
+    try {
+        task_ = std::async(std::launch::async, [this, action, copy = settings_, folder]() mutable -> ActionResult {
+            OperationResult result;
+            try {
+                switch (action) {
+                case Action::Initialize: result = recorder_.Initialize(); break;
+                case Action::Start: result = recorder_.Start(copy); break;
+                case Action::Pause: result = recorder_.Pause(); break;
+                case Action::Resume: result = recorder_.Resume(); break;
+                case Action::Stop: result = recorder_.Stop(); break;
+                case Action::SetFolder: {
+                    OutputManager candidate;
+                    candidate.SetCaptureFolder(folder);
+                    result = candidate.EnsureCaptureFolder();
+                    if (result.ok) { recorder_.SetOutputFolder(folder); copy.outputFolder = folder; }
+                    break;
+                }
+                default: result = OperationResult::Failure(L"Unknown recorder action."); break;
+                }
+            } catch (...) {
+                result = OperationResult::Failure(L"An unexpected recording error occurred. Session files were kept in the recording folder's .camcord-sessions directory.");
+            }
+            return { std::move(result), std::move(copy) };
+        });
+    } catch (...) {
+        pending_ = Action::None;
+        if (!fatalCloseRequested_) closeRequested_ = false;
+        if (snapshotState_ == RecorderState::Idle) ShutdownBlockReasonDestroy(hwnd_);
+        SetNotice(L"error", L"CamCord could not start its background task. Try again.");
+        SendState();
+    }
+}
+
+void MainWindow::PollAction() {
+    if (pending_ == Action::None || !task_.valid() || task_.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) return;
+    const Action completed = pending_;
+    auto result = task_.get();
+    pending_ = Action::None;
+    settings_ = std::move(result.settings);
+    UpdateSnapshot();
+    if (!result.result.ok) {
+        if (!fatalCloseRequested_) closeRequested_ = false;
+        SetNotice(L"error", result.result.message);
+    }
+    else if (completed == Action::Stop) {
+        SetNotice(unexpectedStop_ ? L"warning" : L"success", unexpectedStop_
+            ? L"Recording stopped unexpectedly. The completed portion was recovered."
+            : L"Recording saved successfully.");
+    } else if (completed == Action::SetFolder) SetNotice(L"success", L"New recordings will be saved in the selected folder.");
+    if (completed == Action::Start || completed == Action::SetFolder) SaveSettings();
+    unexpectedStop_ = false;
+    if (snapshotState_ == RecorderState::Idle) ShutdownBlockReasonDestroy(hwnd_);
+    SendState();
+    if (closeRequested_) {
+        if (snapshotState_ == RecorderState::Idle) DestroyWindow(hwnd_);
+        else BeginAction(Action::Stop);
+    }
+}
+
+void MainWindow::ChooseOutputFolder() {
+    if (pending_ != Action::None || snapshotState_ != RecorderState::Idle || folderDialogOpen_) return;
+    folderDialogOpen_ = true;
+    ComPtr<IFileOpenDialog> dialog;
+    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(dialog.ReleaseAndGetAddressOf()));
+    if (SUCCEEDED(hr)) {
+        FILEOPENDIALOGOPTIONS options{};
+        dialog->GetOptions(&options);
+        dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+        dialog->SetTitle(L"Choose where CamCord saves recordings");
+        ComPtr<IShellItem> current;
+        if (!outputFolder_.empty() && SUCCEEDED(SHCreateItemFromParsingName(outputFolder_.c_str(), nullptr,
+            IID_PPV_ARGS(current.ReleaseAndGetAddressOf())))) dialog->SetFolder(current.Get());
+        hr = dialog->Show(hwnd_);
+        if (SUCCEEDED(hr)) {
+            ComPtr<IShellItem> selected;
+            PWSTR path = nullptr;
+            hr = dialog->GetResult(selected.ReleaseAndGetAddressOf());
+            if (SUCCEEDED(hr) && selected) hr = selected->GetDisplayName(SIGDN_FILESYSPATH, &path);
+            if (SUCCEEDED(hr) && path) BeginAction(Action::SetFolder, path);
+            CoTaskMemFree(path);
+        }
+    }
+    folderDialogOpen_ = false;
+    if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+        SetNotice(L"error", L"Windows could not select that folder."); SendState();
+    }
+}
+
+void MainWindow::HandleWebMessage(const std::wstring& message) {
+    const auto type = JsonString(message, L"type");
+    if (type == L"ready") { webReady_ = true; SendState(true); return; }
+    if (type == L"openOutput") {
+        if (!outputFolder_.empty()) ShellExecuteW(hwnd_, L"open", outputFolder_.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        return;
+    }
+    if (pending_ != Action::None || folderDialogOpen_) { SendState(true); return; }
+    if (type == L"settings" && snapshotState_ == RecorderState::Idle) {
+        settings_ = SettingsFromJson(message, settings_); SaveSettings(); SendState();
+    } else if (type == L"start" && snapshotState_ == RecorderState::Idle) {
+        settings_ = SettingsFromJson(message, settings_); SaveSettings(); BeginAction(Action::Start);
+    } else if (type == L"pause") {
+        if (snapshotState_ == RecorderState::Recording) BeginAction(Action::Pause);
+        else if (snapshotState_ == RecorderState::Paused) BeginAction(Action::Resume);
+    } else if (type == L"stop" && snapshotState_ != RecorderState::Idle) {
+        BeginAction(Action::Stop);
+    } else if (type == L"chooseOutput" && snapshotState_ == RecorderState::Idle) {
+        // Native modal dialogs must start after WebMessageReceived has returned.
+        PostMessageW(hwnd_, WM_CHOOSE_FOLDER, 0, 0);
+    } else if (type == L"openLast" && !lastOutput_.empty()) {
+        const auto arguments = L"/select,\"" + lastOutput_ + L"\"";
+        ShellExecuteW(hwnd_, L"open", L"explorer.exe", arguments.c_str(), nullptr, SW_SHOWNORMAL);
+    } else SendState(true);
+}
+
+LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_CREATE:
+        SetTimer(hwnd_, TIMER_RECORDING, 200, nullptr);
+        BeginAction(Action::Initialize);
+        InitializeWebView();
+        return 0;
+    case WM_SIZE: UpdateWebViewBounds(); return 0;
+    case WM_DPICHANGED: {
+        const auto rect = reinterpret_cast<RECT*>(lParam);
+        SetWindowPos(hwnd_, nullptr, rect->left, rect->top, rect->right - rect->left, rect->bottom - rect->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        UpdateWebViewBounds(); return 0;
+    }
+    case WM_GETMINMAXINFO: {
+        const auto info = reinterpret_cast<MINMAXINFO*>(lParam);
+        const UINT dpi = GetDpiForWindow(hwnd_);
+        info->ptMinTrackSize.x = MulDiv(620, dpi ? dpi : 96, 96);
+        info->ptMinTrackSize.y = MulDiv(600, dpi ? dpi : 96, 96);
+        return 0;
+    }
+    case WM_TIMER:
+        if (wParam == TIMER_RECORDING) {
+            PollAction();
+            if (!IsWindow(hwnd_)) return 0;
+            if (pending_ == Action::None) {
+                UpdateSnapshot();
+                if (snapshotState_ == RecorderState::Recording && !recorder_.CaptureAlive()) {
+                    unexpectedStop_ = true; BeginAction(Action::Stop);
+                }
+            }
+            SendState();
+        }
+        return 0;
+    case WM_CHOOSE_FOLDER: ChooseOutputFolder(); return 0;
+    case WM_FATAL_ERROR:
+        MessageBoxW(hwnd_, fatalError_.c_str(), L"CamCord", MB_OK | MB_ICONERROR);
+        fatalCloseRequested_ = true;
+        PostMessageW(hwnd_, WM_CLOSE, 0, 0);
+        return 0;
+    case WM_QUERYENDSESSION:
+        return pending_ == Action::None && snapshotState_ == RecorderState::Idle;
+    case WM_CLOSE:
+        if (pending_ != Action::None || snapshotState_ != RecorderState::Idle) {
+            closeRequested_ = true;
+            SetNotice(L"info", L"CamCord will close after your recording finishes saving.");
+            if (pending_ == Action::None) BeginAction(Action::Stop);
+            SendState();
+            return 0;
+        }
+        DestroyWindow(hwnd_);
+        return 0;
+    case WM_DESTROY:
+        KillTimer(hwnd_, TIMER_RECORDING);
+        ShutdownBlockReasonDestroy(hwnd_);
+        if (task_.valid()) task_.wait();
+        if (webView_ && webMessageToken_.value) webView_->remove_WebMessageReceived(webMessageToken_);
+        if (webViewController_) webViewController_->Close();
+        webView_.Reset(); webViewController_.Reset();
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcW(hwnd_, message, wParam, lParam);
+}

@@ -1,0 +1,219 @@
+import { useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
+import Snackbar from '@mui/material/Snackbar';
+import Switch from '@mui/material/Switch';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Tooltip from '@mui/material/Tooltip';
+import DesktopWindowsRounded from '@mui/icons-material/DesktopWindowsRounded';
+import FiberManualRecordRounded from '@mui/icons-material/FiberManualRecordRounded';
+import FolderOpenRounded from '@mui/icons-material/FolderOpenRounded';
+import GraphicEqRounded from '@mui/icons-material/GraphicEqRounded';
+import MicRounded from '@mui/icons-material/MicRounded';
+import PauseRounded from '@mui/icons-material/PauseRounded';
+import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
+import StopRounded from '@mui/icons-material/StopRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import { BrandMark, SettingRow, Waveform } from './components.jsx';
+import { isNative, sendToHost, subscribeToHost } from './bridge.js';
+import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings } from './recorder-state.js';
+
+const RESOLUTIONS = [{ height: 480, label: 'SD' }, { height: 720, label: 'HD' }, { height: 1080, label: 'FHD' }];
+const FRAME_RATES = [15, 30, 60];
+const HIGH_FRAME_RATES = [...FRAME_RATES, 120];
+
+export default function App() {
+  const [app, setApp] = useState(INITIAL_STATE);
+  const [pendingState, setPendingState] = useState('');
+  const [notice, setNotice] = useState(null);
+  const [connected, setConnected] = useState(!isNative);
+  const previewTimeout = useRef(null);
+  const currentState = pendingState || app.state;
+  const idle = currentState === 'idle';
+  const recording = currentState === 'recording';
+  const paused = currentState === 'paused';
+  const busy = !idle && !recording && !paused;
+  const settingsDisabled = !idle || !connected;
+  const elapsed = formatElapsed(app.elapsedSeconds);
+  const frameRates = app.settings.height === 1080 ? HIGH_FRAME_RATES : FRAME_RATES;
+  const width = app.settings.height === 480 ? 854 : app.settings.height === 720 ? 1280 : 1920;
+  const qualityLabel = `${width} × ${app.settings.height} · ${app.settings.fps} FPS`;
+
+  useEffect(() => {
+    const unsubscribe = subscribeToHost((message) => {
+      setApp((previous) => mergeState(previous, message));
+      setPendingState('');
+      setConnected(true);
+      if (message.notice?.text) setNotice({ ...message.notice, key: Date.now() });
+    });
+    sendToHost({ type: 'ready' });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (isNative) return;
+    const interval = window.setInterval(() => {
+      setApp((previous) => previous.state === 'recording'
+        ? { ...previous, elapsedSeconds: previous.elapsedSeconds + 1 }
+        : previous);
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(previewTimeout.current), []);
+
+  function changeSettings(changes) {
+    if (settingsDisabled) return;
+    const settings = updateSettings(app.settings, changes);
+    // Native calls stay in event handlers: React may invoke state updaters twice.
+    sendToHost({ type: 'settings', settings });
+    setApp((previous) => ({ ...previous, settings }));
+  }
+
+  function previewTransition(nextState, values = {}) {
+    previewTimeout.current = window.setTimeout(() => {
+      setApp((previous) => ({ ...previous, ...values, state: nextState }));
+      setPendingState('');
+    }, 650);
+  }
+
+  function startRecording() {
+    if (settingsDisabled) return;
+    setPendingState('starting');
+    if (!sendToHost({ type: 'start', settings: app.settings })) {
+      previewTransition('recording', { elapsedSeconds: 0, encoder: 'Preview mode' });
+    }
+  }
+
+  function pauseRecording() {
+    if (!recording && !paused) return;
+    setPendingState(paused ? 'resuming' : 'pausing');
+    if (!sendToHost({ type: 'pause' })) previewTransition(paused ? 'recording' : 'paused');
+  }
+
+  function stopRecording() {
+    if (!recording && !paused) return;
+    setPendingState('saving');
+    if (!sendToHost({ type: 'stop' })) {
+      previewTransition('idle', { lastOutput: 'Preview capture — no file recorded' });
+    }
+  }
+
+  function changeOutputFolder() {
+    if (settingsDisabled) return;
+    if (!sendToHost({ type: 'chooseOutput' })) {
+      setNotice({ severity: 'info', text: 'Folder selection is available in the CamCord desktop app.', key: Date.now() });
+    }
+  }
+
+  function openFolder(type) {
+    if (!sendToHost({ type })) {
+      setNotice({ severity: 'info', text: 'Open the CamCord desktop app to access recording files.', key: Date.now() });
+    }
+  }
+
+  const readoutNote = !connected ? 'Connecting to the recorder…'
+    : currentState === 'starting' ? 'Checking your display, audio, and encoder.'
+      : currentState === 'pausing' ? 'Finishing the current recording segment.'
+        : currentState === 'resuming' ? 'Preparing your next recording segment.'
+          : currentState === 'saving' ? 'Finalizing video and audio. Saving can take several minutes for long recordings. Keep CamCord open.'
+            : paused ? 'Capture is paused. Resume when you are ready.'
+              : recording ? (app.encoder ? `Encoding with ${app.encoder}` : 'Capturing your primary display')
+                : app.captureExcluded ? 'Your cursor and CamCord controls stay out of the final video.'
+                  : 'Your cursor is hidden. Minimize CamCord to keep its controls out of the video.';
+
+  return (
+    <div className="app-shell">
+      <div className="ambient ambient-one" aria-hidden="true" />
+      <div className="ambient ambient-two" aria-hidden="true" />
+      <header className="topbar">
+        <div className="brand-lockup">
+          <BrandMark />
+          <div><span className="brand-name">CamCord</span><span className="brand-edition">desktop recorder</span></div>
+        </div>
+        <Tooltip title="Open recording folder">
+          <button className="folder-button" onClick={() => openFolder('openOutput')} aria-label={`Open recording folder: ${app.outputFolder}`}>
+            <FolderOpenRounded fontSize="small" /><span>{app.outputFolder}</span>
+          </button>
+        </Tooltip>
+      </header>
+
+      {!isNative ? <div className="preview-banner">Interface preview · no screen or audio is recorded</div> : null}
+
+      <main className="workspace">
+        <section className={`monitor-panel state-${currentState}`} aria-label="Recording controls">
+          <div className="monitor-topline">
+            <div className="status-label" role="status" aria-live="polite">
+              {busy ? <CircularProgress size={12} thickness={5} aria-hidden="true" /> : <span className="status-pulse" />}
+              {connected ? STATE_LABELS[currentState] : 'Connecting'}
+            </div>
+            <span className="quality-readout">{qualityLabel}</span>
+          </div>
+          <div className="readout">
+            <div className="aperture" aria-hidden="true">
+              <span className="aperture-ring ring-one" />
+              <span className="aperture-ring ring-two" />
+              <span className="aperture-core"><span /></span>
+            </div>
+            <div className="timer" role="timer" aria-label={`Elapsed time ${elapsed}`}>{elapsed}</div>
+            <p className="readout-note">{readoutNote}</p>
+          </div>
+          <Waveform active={recording} paused={paused} />
+          <div className="control-dock">
+            {idle ? (
+              <Button className="record-button" variant="contained" size="large" disabled={!connected} startIcon={<FiberManualRecordRounded />} onClick={startRecording}>Start recording</Button>
+            ) : (
+              <>
+                <Button className="pause-button" variant="outlined" disabled={busy} startIcon={paused ? <PlayArrowRounded /> : <PauseRounded />} onClick={pauseRecording}>{paused ? 'Resume' : 'Pause'}</Button>
+                <Button className="stop-button" variant="contained" disabled={busy} startIcon={<StopRounded />} onClick={stopRecording}>Stop &amp; save</Button>
+              </>
+            )}
+          </div>
+          {app.lastOutput && idle ? (
+            <button className="last-capture" onClick={() => openFolder('openLast')} title={app.lastOutput}>
+              <span>Last capture</span><strong>{app.lastOutput}</strong><FolderOpenRounded fontSize="small" />
+            </button>
+          ) : null}
+        </section>
+
+        <aside className="settings-panel" aria-label="Capture setup">
+          <div className="settings-heading"><div><span>Capture setup</span><h2>Recording quality</h2></div><TuneRounded /></div>
+          <div className="settings-group">
+            <span className="field-label" id="resolution-label">Resolution</span>
+            <ToggleButtonGroup className="resolution-picker" aria-labelledby="resolution-label" exclusive fullWidth value={app.settings.height} disabled={settingsDisabled} onChange={(_, value) => value && changeSettings({ height: value })}>
+              {RESOLUTIONS.map(({ height, label }) => <ToggleButton key={height} value={height} aria-label={`${height}p ${label}`}><strong>{height}</strong><span>{label}</span></ToggleButton>)}
+            </ToggleButtonGroup>
+          </div>
+          <div className="settings-group">
+            <span className="field-label" id="fps-label">Frame rate</span>
+            <ToggleButtonGroup className="fps-picker" aria-labelledby="fps-label" exclusive fullWidth value={app.settings.fps} disabled={settingsDisabled} onChange={(_, value) => value && changeSettings({ fps: value })}>
+              {frameRates.map((fps) => <ToggleButton key={fps} value={fps} aria-label={`${fps} frames per second`}>{fps}</ToggleButton>)}
+            </ToggleButtonGroup>
+            <span className="field-hint">120 FPS is available at 1080p with supported hardware.</span>
+          </div>
+          <div className="settings-group">
+            <span className="field-label">Save location</span>
+            <div className="save-location" title={app.outputFolder}>
+              <span className="save-location-icon" aria-hidden="true"><FolderOpenRounded /></span>
+              <span className="save-location-path">{app.outputFolder}</span>
+              <Button className="change-folder-button" variant="outlined" size="small" disabled={settingsDisabled} onClick={changeOutputFolder} aria-label="Change recording folder">Change</Button>
+            </div>
+            <span className="field-hint">Choose any folder or drive for future recordings.</span>
+          </div>
+          <div className="settings-divider" />
+          <div className="audio-settings">
+            <SettingRow icon={<GraphicEqRounded />} label="System audio" description="Desktop playback" action={<Switch checked={app.settings.systemAudio} disabled={settingsDisabled} onChange={(event) => changeSettings({ systemAudio: event.target.checked })} slotProps={{ input: { 'aria-label': 'System audio' } }} />} />
+            <SettingRow icon={<MicRounded />} label="Microphone" description="Default input" action={<Switch checked={app.settings.microphone} disabled={settingsDisabled} onChange={(event) => changeSettings({ microphone: event.target.checked })} slotProps={{ input: { 'aria-label': 'Microphone' } }} />} />
+          </div>
+          <div className="capture-source"><DesktopWindowsRounded /><div><span>Capture source</span><strong>Primary display</strong></div><span className="source-dot" /></div>
+        </aside>
+      </main>
+
+      <Snackbar key={notice?.key} open={Boolean(notice)} autoHideDuration={notice?.severity === 'error' ? null : 6500} onClose={(_, reason) => reason !== 'clickaway' && setNotice(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity={notice?.severity || 'info'} variant="filled" onClose={() => setNotice(null)}>{notice?.text}</Alert>
+      </Snackbar>
+    </div>
+  );
+}
