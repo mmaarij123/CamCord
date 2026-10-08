@@ -1,6 +1,6 @@
 # Third-party software in CamCord
 
-CamCord uses separately licensed components. The installed `licenses` directory contains their original license and attribution files. These notices do not replace those licenses.
+CamCord's original code is licensed under the MIT License in [LICENSE](LICENSE). Its third-party components use their own licenses. The installed `licenses` directory contains their original license and attribution files. These notices do not replace those licenses.
 
 ## FFmpeg
 

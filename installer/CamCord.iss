@@ -47,6 +47,7 @@ Source: "{tmp}\ffmpeg-extracted\ffmpeg-9.0.2-essentials_build\bin\ffmpeg.exe"; D
 Source: "..\bin\Release\ui\*"; DestDir: "{app}\ui"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\bin\Release\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\bin\Release\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bin\Release\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\bin\Release\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\third_party\webview2-runtime\MicrosoftEdgeWebview2Setup.exe"; Flags: dontcopy
 

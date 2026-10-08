@@ -16,3 +16,7 @@ Currently available for **Windows only**: Windows 10 version 2004 or later, or W
 4. Open **CamCord** from the Start menu and start recording.
 
 **Keep your internet connection active during installation.** Setup automatically downloads the required components. After installation, you can record offline.
+
+## License
+
+CamCord is licensed under the [MIT License](LICENSE). Third-party components retain their [own licenses](THIRD_PARTY_NOTICES.md).

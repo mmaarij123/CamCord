@@ -15,6 +15,7 @@ if (Test-Path -LiteralPath $uiDestination) {
 Copy-Item -LiteralPath $uiSource -Destination $uiDestination -Recurse
 Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\ffmpeg\ffmpeg.exe') -Destination $outputDirectory -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $outputDirectory -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $outputDirectory -Force
 $licenseDirectory = Join-Path $outputDirectory 'licenses'
 if (Test-Path -LiteralPath $licenseDirectory) {
     $expectedLicenseDirectory = [IO.Path]::GetFullPath((Join-Path $projectRoot "bin\$Configuration\licenses"))
