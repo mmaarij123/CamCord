@@ -1,6 +1,6 @@
 # CamCord
 
-A simple screen recorder for capturing your screen, system audio and microphone.
+A lightweight screen recorder for every capture you imagine. Available on Windows, with Linux and macOS coming soon.
 
 ## Features
 
