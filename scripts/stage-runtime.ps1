@@ -24,6 +24,7 @@ if (Test-Path -LiteralPath $licenseDirectory) {
     Remove-Item -LiteralPath $resolvedLicenseDirectory -Recurse -Force
 }
 New-Item -ItemType Directory -Path $licenseDirectory -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\json\LICENSE.MIT') -Destination (Join-Path $licenseDirectory 'nlohmann-json-MIT.txt') -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\ffmpeg\LICENSE') -Destination (Join-Path $licenseDirectory 'FFmpeg-GPLv3.txt') -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\ffmpeg\README.txt') -Destination (Join-Path $licenseDirectory 'FFmpeg-build.txt') -Force
 Get-ChildItem -LiteralPath (Join-Path $projectRoot 'third_party\webview2') -File -Filter '*LICENSE*' | Copy-Item -Destination $licenseDirectory -Force

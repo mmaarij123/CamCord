@@ -14,8 +14,8 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup><WebView2Root>$(MSBuildProjectDirectory)\third_party\webview2</WebView2Root></PropertyGroup>
   <ItemDefinitionGroup>
-    <ClCompile><AdditionalIncludeDirectories>$(WebView2Root)\build\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
-    <Link><AdditionalLibraryDirectories>$(WebView2Root)\build\native\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories></Link>
+    <ClCompile><AdditionalIncludeDirectories>$(WebView2Root)\build\native\include;$(MSBuildProjectDirectory)\third_party\json;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <Link><AdditionalLibraryDirectories>$(WebView2Root)\build\native\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>winhttp.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
     <PostBuildEvent><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(MSBuildProjectDirectory)\scripts\stage-runtime.ps1" -Configuration "$(Configuration)"</Command></PostBuildEvent>
   </ItemDefinitionGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><OutDir>$(SolutionDir)bin\Debug\</OutDir><IntDir>$(SolutionDir)obj\Debug\</IntDir><TargetName>CamCord</TargetName></PropertyGroup>
@@ -32,11 +32,13 @@
     <ClCompile Include="src\App.cpp" /><ClCompile Include="src\MainWindow.cpp" /><ClCompile Include="src\OutputManager.cpp" />
     <ClCompile Include="src\SettingsManager.cpp" /><ClCompile Include="src\Process.cpp" /><ClCompile Include="src\HardwareEncoderDetector.cpp" />
     <ClCompile Include="src\AudioCaptureEngine.cpp" /><ClCompile Include="src\CaptureEngine.cpp" /><ClCompile Include="src\RecordingManager.cpp" />
+    <ClCompile Include="src\UpdateManager.cpp" /><ClCompile Include="src\StartupManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\MainWindow.h" /><ClInclude Include="src\OutputManager.h" /><ClInclude Include="src\SettingsManager.h" />
     <ClInclude Include="src\Process.h" /><ClInclude Include="src\HardwareEncoderDetector.h" /><ClInclude Include="src\AudioCaptureEngine.h" />
     <ClInclude Include="src\CaptureEngine.h" /><ClInclude Include="src\RecordingManager.h" /><ClInclude Include="src\RecordingTypes.h" /><ClInclude Include="src\ComPtr.h" />
+    <ClInclude Include="src\UpdateManager.h" /><ClInclude Include="src\StartupManager.h" /><ClInclude Include="src\AppVersion.h" />
   </ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><ResourceCompile Include="resources.rc" /></ItemGroup>

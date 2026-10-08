@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 — 2026-10-08
+
+- Added automatic stable-release checks and background update downloads from GitHub, with checksum verification and progress.
+- Added Check now and Install & restart controls; installation waits until recording and saving finish.
+- Added an opt-in Windows startup switch. CamCord opens minimized at sign-in without recording automatically.
+- Remembered the automatic-update preference and preserved startup registration during upgrades; uninstall removes CamCord's startup entry.
+- Included the MIT license in the Windows setup and added isolated updater/startup tests to CI.
+
 ## 1.3.1 — 2026-10-08
 
 - Removed the 15-second encoder shutdown limit so a valid capture can drain while the app remains responsive.

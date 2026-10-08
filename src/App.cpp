@@ -3,10 +3,11 @@
 #include <commctrl.h>
 #include <objbase.h>
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCommand) {
+    const bool atStartup = commandLine && std::wstring(commandLine) == L"--startup";
     HANDLE singleInstance = CreateMutexW(nullptr, FALSE, L"Local\\CamCordDesktopRecorder");
     if (singleInstance && GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (HWND existing = FindWindowW(L"CamCordMainWindow", nullptr)) {
+        if (HWND existing = !atStartup ? FindWindowW(L"CamCordMainWindow", nullptr) : nullptr) {
             ShowWindow(existing, SW_RESTORE);
             SetForegroundWindow(existing);
         }
@@ -18,7 +19,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     InitCommonControlsEx(&controls);
     HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MainWindow window;
-    if (!window.Create(instance, showCommand)) {
+    if (!window.Create(instance, atStartup ? SW_SHOWMINNOACTIVE : showCommand)) {
         MessageBoxW(nullptr, L"CamCord could not create its main window.", L"CamCord", MB_OK | MB_ICONERROR);
         if (SUCCEEDED(com)) CoUninitialize();
         if (singleInstance) CloseHandle(singleInstance);

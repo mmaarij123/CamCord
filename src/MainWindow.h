@@ -6,6 +6,8 @@
 #include <string>
 #include "RecordingManager.h"
 #include "SettingsManager.h"
+#include "StartupManager.h"
+#include "UpdateManager.h"
 
 class MainWindow {
 public:
@@ -14,6 +16,7 @@ public:
 private:
     enum class Action { None, Initialize, Start, Pause, Resume, Stop, SetFolder };
     struct ActionResult { OperationResult result; RecordingSettings settings; };
+    enum class UpdateAction { None, Check, Download, Verify };
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     void InitializeWebView();
@@ -27,6 +30,9 @@ private:
     void SetNotice(std::wstring severity, std::wstring text);
     void ReportFatal(std::wstring text);
     void SaveSettings();
+    void BeginUpdate(UpdateAction action, bool manual = false);
+    void PollUpdate();
+    void InstallUpdate();
     HWND hwnd_ = nullptr;
     HINSTANCE instance_ = nullptr;
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> webViewController_;
@@ -47,4 +53,12 @@ private:
     bool folderDialogOpen_ = false;
     bool captureExcluded_ = false;
     bool fatalCloseRequested_ = false;
+    StartupManager startup_;
+    UpdateManager updater_;
+    std::future<UpdateResult> updateTask_;
+    UpdateAction updateAction_ = UpdateAction::None;
+    UpdateInfo updateInfo_;
+    std::wstring updateStatus_ = L"idle", updateMessage_ = L"Check for updates.", updateInstaller_;
+    std::chrono::steady_clock::time_point nextUpdateCheck_;
+    bool startupEnabled_ = false, manualUpdate_ = false, downloadWhenAvailable_ = false;
 };

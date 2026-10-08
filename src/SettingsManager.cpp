@@ -34,6 +34,7 @@ RecordingSettings SettingsManager::Load() const {
     if (s.fps == 120 && s.height != 1080) s.fps = 60;
     s.systemAudio = GetPrivateProfileIntW(L"Recording", L"SystemAudio", 1, path.c_str()) != 0;
     s.microphone = GetPrivateProfileIntW(L"Recording", L"Microphone", 0, path.c_str()) != 0;
+    s.autoCheckUpdates = GetPrivateProfileIntW(L"Application", L"AutoCheckUpdates", 1, path.c_str()) != 0;
     std::vector<wchar_t> folder(32768);
     GetPrivateProfileStringW(L"Recording", L"OutputFolder", L"", folder.data(), static_cast<DWORD>(folder.size()), path.c_str());
     s.outputFolder = folder.data();
@@ -47,7 +48,7 @@ OperationResult SettingsManager::Save(const RecordingSettings& s) const {
     std::wostringstream content;
     content << L"\xFEFF[Recording]\r\nHeight=" << s.height << L"\r\nFps=" << s.fps
         << L"\r\nSystemAudio=" << (s.systemAudio ? 1 : 0) << L"\r\nMicrophone=" << (s.microphone ? 1 : 0)
-        << L"\r\nOutputFolder=" << s.outputFolder << L"\r\n";
+        << L"\r\nOutputFolder=" << s.outputFolder << L"\r\n[Application]\r\nAutoCheckUpdates=" << (s.autoCheckUpdates ? 1 : 0) << L"\r\n";
     const auto text = content.str();
     const auto temporary = path + L"." + std::to_wstring(GetCurrentProcessId()) + L".tmp";
     HANDLE file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

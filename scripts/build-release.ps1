@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 & (Join-Path $PSScriptRoot 'setup-ffmpeg.ps1')
 & (Join-Path $PSScriptRoot 'setup-webview2.ps1')
+& (Join-Path $PSScriptRoot 'setup-json.ps1')
 & (Join-Path $PSScriptRoot 'build-ui.ps1') -Configuration $Configuration
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Install Visual Studio or Build Tools with Desktop development with C++.' }

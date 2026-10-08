@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "AppVersion.h"
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -15,6 +16,7 @@ namespace {
 constexpr UINT_PTR TIMER_RECORDING = 1;
 constexpr UINT WM_CHOOSE_FOLDER = WM_APP + 1;
 constexpr UINT WM_FATAL_ERROR = WM_APP + 2;
+constexpr UINT WM_INSTALL_UPDATE = WM_APP + 3;
 constexpr wchar_t APP_URL[] = L"https://app.camcord/index.html";
 
 std::wstring ExecutableDirectory() {
@@ -81,6 +83,7 @@ RecordingSettings SettingsFromJson(const std::wstring& json, RecordingSettings s
     if (settings.height != 1080 && settings.fps == 120) settings.fps = 60;
     settings.systemAudio = JsonBoolean(json, L"systemAudio", settings.systemAudio);
     settings.microphone = JsonBoolean(json, L"microphone", settings.microphone);
+    settings.autoCheckUpdates = JsonBoolean(json, L"autoCheckUpdates", settings.autoCheckUpdates);
     return settings;
 }
 }
@@ -88,6 +91,8 @@ RecordingSettings SettingsFromJson(const std::wstring& json, RecordingSettings s
 bool MainWindow::Create(HINSTANCE instance, int showCommand) {
     instance_ = instance;
     settings_ = settingsManager_.Load();
+    startupEnabled_ = startup_.IsEnabled();
+    nextUpdateCheck_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     recorder_.SetOutputFolder(settings_.outputFolder);
     outputFolder_ = settings_.outputFolder;
     WNDCLASSEXW wc{ sizeof(wc) };
@@ -251,10 +256,15 @@ void MainWindow::SendState(bool force) {
         << L",\"settings\":{\"height\":" << settings_.height << L",\"fps\":" << settings_.fps
         << L",\"systemAudio\":" << (settings_.systemAudio ? L"true" : L"false")
         << L",\"microphone\":" << (settings_.microphone ? L"true" : L"false")
+        << L",\"autoCheckUpdates\":" << (settings_.autoCheckUpdates ? L"true" : L"false")
         << L"},\"encoder\":\"" << JsonEscape(encoder_) << L"\",\"outputFolder\":\""
         << JsonEscape(outputFolder_.empty() ? L"Videos / CamCord Captures" : outputFolder_)
         << L"\",\"lastOutput\":\"" << JsonEscape(lastName) << L"\",\"captureExcluded\":"
         << (captureExcluded_ ? L"true" : L"false");
+    json << L",\"appVersion\":\"" << CAMCORD_VERSION_W << L"\",\"startupEnabled\":" << (startupEnabled_ ? L"true" : L"false")
+        << L",\"update\":{\"status\":\"" << JsonEscape(updateStatus_) << L"\",\"message\":\"" << JsonEscape(updateMessage_)
+        << L"\",\"version\":\"" << JsonEscape(std::wstring(updateInfo_.version.begin(), updateInfo_.version.end()))
+        << L"\",\"progress\":" << updater_.Progress() << L"}";
     if (!noticeText_.empty()) json << L",\"notice\":{\"severity\":\"" << JsonEscape(noticeSeverity_)
         << L"\",\"text\":\"" << JsonEscape(noticeText_) << L"\"}";
     json << L"}";
@@ -326,9 +336,93 @@ void MainWindow::PollAction() {
     if (snapshotState_ == RecorderState::Idle) ShutdownBlockReasonDestroy(hwnd_);
     SendState();
     if (closeRequested_) {
-        if (snapshotState_ == RecorderState::Idle) DestroyWindow(hwnd_);
+        if (snapshotState_ == RecorderState::Idle) PostMessageW(hwnd_, WM_CLOSE, 0, 0);
         else BeginAction(Action::Stop);
     }
+}
+
+void MainWindow::BeginUpdate(UpdateAction action, bool manual) {
+    if (updateAction_ != UpdateAction::None || closeRequested_) return;
+    if (action == UpdateAction::Verify && !UpdateManager::CanInstall(snapshotState_, pending_ != Action::None,
+        folderDialogOpen_, updateStatus_ == L"ready")) {
+        SetNotice(L"info", L"Stop and save your recording before installing an update."); SendState(); return;
+    }
+    updater_.Reset();
+    updateAction_ = action;
+    manualUpdate_ = manual;
+    if (action == UpdateAction::Check) {
+        updateStatus_ = L"checking"; updateMessage_ = L"Checking for updates...";
+        downloadWhenAvailable_ = manual || settings_.autoCheckUpdates;
+        nextUpdateCheck_ = std::chrono::steady_clock::now() + std::chrono::hours(6);
+    } else if (action == UpdateAction::Download) {
+        updateStatus_ = L"downloading"; updateMessage_ = L"Downloading update... You can keep recording.";
+        downloadWhenAvailable_ = false;
+    } else {
+        updateStatus_ = L"installing"; updateMessage_ = L"Verifying update before restarting...";
+    }
+    SendState();
+    try {
+        updateTask_ = std::async(std::launch::async, [this, action, info = updateInfo_, installer = updateInstaller_]() -> UpdateResult {
+            try {
+                if (action == UpdateAction::Check) return updater_.Check();
+                if (action == UpdateAction::Download) return updater_.Download(info);
+                return { updater_.Verify(info, installer), info, installer };
+            } catch (...) { return { OperationResult::Failure(L"The update could not be prepared. Try again later."), {}, L"" }; }
+        });
+    } catch (...) {
+        updateAction_ = UpdateAction::None;
+        updateStatus_ = L"error"; updateMessage_ = L"Could not start the update check. Try again.";
+        SendState();
+    }
+}
+
+void MainWindow::PollUpdate() {
+    if (updateAction_ != UpdateAction::None && updateTask_.valid() &&
+        updateTask_.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+        const auto completed = updateAction_;
+        UpdateResult result;
+        try { result = updateTask_.get(); }
+        catch (...) { result.result = OperationResult::Failure(L"The update could not be prepared. Try again later."); }
+        updateAction_ = UpdateAction::None;
+        if (closeRequested_) { PostMessageW(hwnd_, WM_CLOSE, 0, 0); return; }
+        if (updater_.Cancelled() && !manualUpdate_) {
+            updateStatus_ = L"idle"; updateMessage_ = L"Automatic updates are off."; downloadWhenAvailable_ = false;
+        } else if (!result.result.ok) {
+            updateStatus_ = L"error"; updateMessage_ = result.result.message; downloadWhenAvailable_ = false;
+        } else if (completed == UpdateAction::Check) {
+            updateInfo_ = result.info; updateInstaller_.clear();
+            updateStatus_ = updateInfo_.available ? L"available" : L"idle";
+            updateMessage_ = result.result.message;
+        } else if (completed == UpdateAction::Download) {
+            updateInstaller_ = std::move(result.installer);
+            updateStatus_ = L"ready"; updateMessage_ = L"Update ready. Install when you've finished recording.";
+        } else {
+            PostMessageW(hwnd_, WM_INSTALL_UPDATE, 0, 0);
+        }
+        SendState();
+    }
+    if (closeRequested_ || updateAction_ != UpdateAction::None || !webReady_) return;
+    if (updateStatus_ == L"available" && downloadWhenAvailable_ && pending_ == Action::None &&
+        snapshotState_ == RecorderState::Idle && !folderDialogOpen_) {
+        BeginUpdate(UpdateAction::Download, manualUpdate_);
+    } else if (updateStatus_ != L"installing" && settings_.autoCheckUpdates &&
+        std::chrono::steady_clock::now() >= nextUpdateCheck_) BeginUpdate(UpdateAction::Check);
+}
+
+void MainWindow::InstallUpdate() {
+    if (closeRequested_ || !UpdateManager::CanInstall(snapshotState_, pending_ != Action::None,
+        folderDialogOpen_, updateStatus_ == L"installing")) return;
+    const auto folder = ExecutableDirectory();
+    const auto parameters = L"/SP- /SILENT /NORESTART /CAMCORDUPDATE=1 /DIR=" + QuoteArg(folder);
+    SHELLEXECUTEINFOW launch{ sizeof(launch) };
+    launch.hwnd = hwnd_; launch.lpVerb = L"open"; launch.lpFile = updateInstaller_.c_str();
+    launch.lpParameters = parameters.c_str(); launch.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&launch)) {
+        updateStatus_ = L"ready"; updateMessage_ = L"The update installer could not open. Try Install & restart again.";
+        SetNotice(L"error", updateMessage_); SendState(); return;
+    }
+    closeRequested_ = true;
+    PostMessageW(hwnd_, WM_CLOSE, 0, 0);
 }
 
 void MainWindow::ChooseOutputFolder() {
@@ -363,13 +457,28 @@ void MainWindow::ChooseOutputFolder() {
 void MainWindow::HandleWebMessage(const std::wstring& message) {
     const auto type = JsonString(message, L"type");
     if (type == L"ready") { webReady_ = true; SendState(true); return; }
+    if (closeRequested_ || updateStatus_ == L"installing") { SendState(true); return; }
+    if (type == L"checkUpdates") { BeginUpdate(UpdateAction::Check, true); return; }
+    if (type == L"downloadUpdate" && updateStatus_ == L"available") { BeginUpdate(UpdateAction::Download, true); return; }
+    if (type == L"installUpdate") { BeginUpdate(UpdateAction::Verify, true); return; }
     if (type == L"openOutput") {
         if (!outputFolder_.empty()) ShellExecuteW(hwnd_, L"open", outputFolder_.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         return;
     }
     if (pending_ != Action::None || folderDialogOpen_) { SendState(true); return; }
     if (type == L"settings" && snapshotState_ == RecorderState::Idle) {
-        settings_ = SettingsFromJson(message, settings_); SaveSettings(); SendState();
+        const bool wasAutomatic = settings_.autoCheckUpdates;
+        settings_ = SettingsFromJson(message, settings_);
+        if (wasAutomatic != settings_.autoCheckUpdates) {
+            nextUpdateCheck_ = std::chrono::steady_clock::now();
+            if (!settings_.autoCheckUpdates && !manualUpdate_) { downloadWhenAvailable_ = false; updater_.Cancel(); }
+        }
+        SaveSettings(); SendState();
+    } else if (type == L"startup" && snapshotState_ == RecorderState::Idle) {
+        const auto result = startup_.SetEnabled(JsonBoolean(message, L"enabled", startupEnabled_));
+        startupEnabled_ = startup_.IsEnabled();
+        if (!result.ok) SetNotice(L"error", result.message);
+        SendState(true);
     } else if (type == L"start" && snapshotState_ == RecorderState::Idle) {
         settings_ = SettingsFromJson(message, settings_); SaveSettings(); BeginAction(Action::Start);
     } else if (type == L"pause") {
@@ -410,6 +519,7 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (wParam == TIMER_RECORDING) {
             PollAction();
             if (!IsWindow(hwnd_)) return 0;
+            PollUpdate();
             if (pending_ == Action::None) {
                 UpdateSnapshot();
                 if (snapshotState_ == RecorderState::Recording && !recorder_.CaptureAlive()) {
@@ -420,6 +530,7 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         return 0;
     case WM_CHOOSE_FOLDER: ChooseOutputFolder(); return 0;
+    case WM_INSTALL_UPDATE: InstallUpdate(); return 0;
     case WM_FATAL_ERROR:
         MessageBoxW(hwnd_, fatalError_.c_str(), L"CamCord", MB_OK | MB_ICONERROR);
         fatalCloseRequested_ = true;
@@ -428,6 +539,7 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_QUERYENDSESSION:
         return pending_ == Action::None && snapshotState_ == RecorderState::Idle;
     case WM_CLOSE:
+        updater_.Cancel();
         if (pending_ != Action::None || snapshotState_ != RecorderState::Idle) {
             closeRequested_ = true;
             SetNotice(L"info", L"CamCord will close after your recording finishes saving.");
@@ -435,12 +547,18 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             SendState();
             return 0;
         }
+        if (updateTask_.valid()) {
+            closeRequested_ = true;
+            SetNotice(L"info", L"Closing CamCord..."); SendState(); return 0;
+        }
         DestroyWindow(hwnd_);
         return 0;
     case WM_DESTROY:
         KillTimer(hwnd_, TIMER_RECORDING);
         ShutdownBlockReasonDestroy(hwnd_);
         if (task_.valid()) task_.wait();
+        updater_.Cancel();
+        if (updateTask_.valid()) updateTask_.wait();
         if (webView_ && webMessageToken_.value) webView_->remove_WebMessageReceived(webMessageToken_);
         if (webViewController_) webViewController_->Close();
         webView_.Reset(); webViewController_.Reset();

@@ -49,6 +49,9 @@ jobs:
       - name: Test recording finalization and recovery
         shell: pwsh
         run: .\tests\pipeline-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe
+      - name: Test updater and startup preferences
+        shell: pwsh
+        run: .\tests\app-features-test.ps1
       - name: Generate release checksums
         shell: pwsh
         run: |

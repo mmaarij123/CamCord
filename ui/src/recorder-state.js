@@ -1,7 +1,12 @@
+import packageInfo from '../package.json' with { type: 'json' };
+
 export const INITIAL_STATE = {
   state: 'idle',
   elapsedSeconds: 0,
-  settings: { height: 1080, fps: 60, systemAudio: true, microphone: false },
+  settings: { height: 1080, fps: 60, systemAudio: true, microphone: false, autoCheckUpdates: true },
+  appVersion: packageInfo.version,
+  startupEnabled: false,
+  update: { status: 'idle', message: 'Check for updates.', version: '', progress: 0 },
   encoder: '',
   outputFolder: 'Videos / CamCord Captures',
   lastOutput: '',
@@ -46,5 +51,10 @@ export function mergeState(previous, message) {
     ...previous,
     ...message,
     settings: { ...previous.settings, ...message.settings },
+    update: { ...previous.update, ...message.update },
   };
+}
+
+export function canInstallUpdate(app) {
+  return app.state === 'idle' && app.update.status === 'ready';
 }

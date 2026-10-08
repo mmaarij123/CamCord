@@ -13,6 +13,8 @@ A simple screen recorder for capturing your screen, system audio and microphone.
 - **Background saving:** shows a saving status while longer recordings are being finalized.
 - **MP4 videos:** recordings are saved locally without watermarks and can be made offline after installation.
 - **Simple dark interface:** easy controls for recording, settings and opening saved files.
+- **Automatic updates:** checks GitHub releases and downloads verified updates; install and restart when you're ready.
+- **Windows startup:** enable or disable launching CamCord at sign-in from App settings.
 
 ## Platforms
 
@@ -22,12 +24,16 @@ Currently available for **Windows only**: Windows 10 version 2004 or later, or W
 
 ## How to install
 
-1. Open the [CamCord v1.3.1 release](https://github.com/mmaarij123/CamCord/releases/tag/v1.3.1).
-2. Under **Assets**, download **CamCord-Setup.exe**, or use the [direct setup download](https://github.com/mmaarij123/CamCord/releases/download/v1.3.1/CamCord-Setup.exe).
+1. Open the [latest CamCord release](https://github.com/mmaarij123/CamCord/releases/latest).
+2. Under **Assets**, download **CamCord-Setup.exe**, or use the [direct setup download](https://github.com/mmaarij123/CamCord/releases/latest/download/CamCord-Setup.exe).
 3. Run the downloaded setup and follow the installation steps.
 4. Open **CamCord** from the Start menu and start recording.
 
 **Keep your internet connection active during installation.** Setup automatically downloads the required components. After installation, you can record offline.
+
+In **App settings**, switch **Launch at Windows startup** on or off. Startup opens CamCord minimized without starting a recording. **Automatic updates** checks on launch and every six hours; you can also use **Check now**. Updates install through **Install & restart** after you've stopped and saved your recording.
+
+Version 1.3.1 and earlier need this setup installed once to receive the in-app updater. Future updates require publishing a new stable GitHub release with a higher version and its setup file; pushing source changes alone does not update installed apps.
 
 ## License
 

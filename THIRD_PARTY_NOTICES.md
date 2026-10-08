@@ -4,7 +4,7 @@ CamCord's original code is licensed under the MIT License in [LICENSE](LICENSE).
 
 ## FFmpeg
 
-The public CamCord installer does **not** embed or redistribute an FFmpeg executable. During installation it downloads the unmodified **FFmpeg 9.0.2 essentials** Windows x64 static build directly from [Gyan Doshi](https://www.gyan.dev/ffmpeg/builds/), licensed under **GNU GPL version 3**, and verifies its archive and executable checksums. CamCord invokes the downloaded `ffmpeg.exe` as a separate command-line program. FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
+The public CamCord installer does **not** embed or redistribute an FFmpeg executable. When a checksum-verified local copy is unavailable, installation downloads the unmodified **FFmpeg 9.0.2 essentials** Windows x64 static build directly from [Gyan Doshi](https://www.gyan.dev/ffmpeg/builds/), licensed under **GNU GPL version 3**, and verifies its archive and executable checksums. Upgrades reuse an existing matching executable after verification. CamCord invokes `ffmpeg.exe` as a separate command-line program. FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
 
 - Binary package: https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip
 - Binary package SHA-256: `60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`
@@ -30,3 +30,9 @@ CamCord statically links the WebView2 SDK loader from **Microsoft.Web.WebView2 1
 
 - SDK: https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3485.44
 - Runtime and terms: https://developer.microsoft.com/microsoft-edge/webview2/
+
+## JSON for Modern C++
+
+The native update checker uses nlohmann/json 3.12.0 under the MIT License, copyright Niels Lohmann and contributors. Its original license is shipped as `licenses/nlohmann-json-MIT.txt`.
+
+- Source: https://github.com/nlohmann/json/tree/v3.12.0

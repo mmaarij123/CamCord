@@ -10,6 +10,7 @@ struct RecordingSettings {
     int fps = 60;
     bool systemAudio = true;
     bool microphone = false;
+    bool autoCheckUpdates = true;
     std::wstring outputFolder;
 };
 

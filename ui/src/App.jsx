@@ -16,9 +16,12 @@ import PauseRounded from '@mui/icons-material/PauseRounded';
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
 import StopRounded from '@mui/icons-material/StopRounded';
 import TuneRounded from '@mui/icons-material/TuneRounded';
+import PowerSettingsNewRounded from '@mui/icons-material/PowerSettingsNewRounded';
+import SystemUpdateAltRounded from '@mui/icons-material/SystemUpdateAltRounded';
+import LinearProgress from '@mui/material/LinearProgress';
 import { BrandMark, SettingRow, Waveform } from './components.jsx';
 import { isNative, sendToHost, subscribeToHost } from './bridge.js';
-import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings } from './recorder-state.js';
+import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings, canInstallUpdate } from './recorder-state.js';
 
 const RESOLUTIONS = [{ height: 480, label: 'SD' }, { height: 720, label: 'HD' }, { height: 1080, label: 'FHD' }];
 const FRAME_RATES = [15, 30, 60];
@@ -29,13 +32,16 @@ export default function App() {
   const [pendingState, setPendingState] = useState('');
   const [notice, setNotice] = useState(null);
   const [connected, setConnected] = useState(!isNative);
+  const [startupPending, setStartupPending] = useState(false);
   const previewTimeout = useRef(null);
   const currentState = pendingState || app.state;
   const idle = currentState === 'idle';
   const recording = currentState === 'recording';
   const paused = currentState === 'paused';
   const busy = !idle && !recording && !paused;
-  const settingsDisabled = !idle || !connected;
+  const installingUpdate = app.update.status === 'installing';
+  const updateBusy = ['checking', 'downloading', 'installing'].includes(app.update.status);
+  const settingsDisabled = !idle || !connected || installingUpdate;
   const elapsed = formatElapsed(app.elapsedSeconds);
   const frameRates = app.settings.height === 1080 ? HIGH_FRAME_RATES : FRAME_RATES;
   const width = app.settings.height === 480 ? 854 : app.settings.height === 720 ? 1280 : 1920;
@@ -46,6 +52,7 @@ export default function App() {
       setApp((previous) => mergeState(previous, message));
       setPendingState('');
       setConnected(true);
+      setStartupPending(false);
       if (message.notice?.text) setNotice({ ...message.notice, key: Date.now() });
     });
     sendToHost({ type: 'ready' });
@@ -77,6 +84,23 @@ export default function App() {
       setApp((previous) => ({ ...previous, ...values, state: nextState }));
       setPendingState('');
     }, 650);
+  }
+
+  function changeStartup(enabled) {
+    if (settingsDisabled || startupPending) return;
+    setStartupPending(true);
+    if (!sendToHost({ type: 'startup', enabled })) {
+      setApp((previous) => ({ ...previous, startupEnabled: enabled }));
+      setStartupPending(false);
+    }
+  }
+
+  function updateApp(type) {
+    if (!connected || updateBusy) return;
+    if (type === 'installUpdate' && !canInstallUpdate({ ...app, state: currentState })) return;
+    if (!sendToHost({ type })) {
+      setNotice({ severity: 'info', text: 'Updates are available in the CamCord desktop app.', key: Date.now() });
+    }
   }
 
   function startRecording() {
@@ -163,7 +187,7 @@ export default function App() {
           <Waveform active={recording} paused={paused} />
           <div className="control-dock">
             {idle ? (
-              <Button className="record-button" variant="contained" size="large" disabled={!connected} startIcon={<FiberManualRecordRounded />} onClick={startRecording}>Start recording</Button>
+              <Button className="record-button" variant="contained" size="large" disabled={!connected || installingUpdate} startIcon={<FiberManualRecordRounded />} onClick={startRecording}>Start recording</Button>
             ) : (
               <>
                 <Button className="pause-button" variant="outlined" disabled={busy} startIcon={paused ? <PlayArrowRounded /> : <PauseRounded />} onClick={pauseRecording}>{paused ? 'Resume' : 'Pause'}</Button>
@@ -208,6 +232,22 @@ export default function App() {
             <SettingRow icon={<MicRounded />} label="Microphone" description="Default input" action={<Switch checked={app.settings.microphone} disabled={settingsDisabled} onChange={(event) => changeSettings({ microphone: event.target.checked })} slotProps={{ input: { 'aria-label': 'Microphone' } }} />} />
           </div>
           <div className="capture-source"><DesktopWindowsRounded /><div><span>Capture source</span><strong>Primary display</strong></div><span className="source-dot" /></div>
+          <section className="app-preferences" aria-labelledby="app-preferences-heading">
+            <h3 id="app-preferences-heading">App settings</h3>
+            <SettingRow icon={<PowerSettingsNewRounded />} label="Launch at Windows startup" description="Open minimized when you sign in" action={<Switch checked={app.startupEnabled} disabled={settingsDisabled || startupPending} onChange={(event) => changeStartup(event.target.checked)} slotProps={{ input: { 'aria-label': 'Launch at Windows startup' } }} />} />
+            <SettingRow icon={<SystemUpdateAltRounded />} label="Automatic updates" description="Check and download new releases" action={<Switch checked={app.settings.autoCheckUpdates} disabled={settingsDisabled} onChange={(event) => changeSettings({ autoCheckUpdates: event.target.checked })} slotProps={{ input: { 'aria-label': 'Automatically check for updates' } }} />} />
+            <div className="update-heading"><strong>Updates</strong><span>Version {app.appVersion}</span></div>
+            <p className={`update-message ${app.update.status === 'error' ? 'is-error' : ''}`} role="status" aria-live="polite">
+              {app.update.version && ['available', 'downloading', 'ready'].includes(app.update.status) ? `Version ${app.update.version} · ` : ''}{app.update.message}
+            </p>
+            {app.update.status === 'downloading' ? <LinearProgress className="update-progress" variant="determinate" value={Math.max(0, Math.min(100, app.update.progress))} aria-label="Update download progress" /> : null}
+            <div className="update-actions">
+              <Button variant="outlined" size="small" disabled={!connected || updateBusy} onClick={() => updateApp('checkUpdates')} startIcon={app.update.status === 'checking' ? <CircularProgress size={12} color="inherit" /> : null}>Check now</Button>
+              {app.update.status === 'available' ? <Button variant="contained" size="small" disabled={!connected || updateBusy} onClick={() => updateApp('downloadUpdate')}>Download update</Button> : null}
+              {app.update.status === 'ready' ? <Tooltip title={!idle ? 'Stop and save your recording first' : 'CamCord will restart after installation'}><span><Button variant="contained" size="small" disabled={!connected || !canInstallUpdate({ ...app, state: currentState })} onClick={() => updateApp('installUpdate')}>Install &amp; restart</Button></span></Tooltip> : null}
+            </div>
+            <span className="field-hint">Updates install when you choose. Stop and save your recording first.</span>
+          </section>
         </aside>
       </main>
 

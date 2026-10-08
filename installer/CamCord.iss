@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.3.1"
+  #define MyAppVersion "1.4.0"
 #endif
 
 [Setup]
@@ -60,6 +60,7 @@ Name: "{autodesktop}\CamCord"; Filename: "{app}\CamCord.exe"; Tasks: desktopicon
 [Run]
 #ifndef InstallerSmokeTest
 Filename: "{app}\CamCord.exe"; Description: "Open CamCord"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\CamCord.exe"; Flags: nowait skipifnotsilent; Check: IsAppUpdate
 #endif
 
 [Code]
@@ -68,10 +69,40 @@ const
   FFmpegUrl = 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip';
   FFmpegArchiveHash = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba';
   FFmpegBinaryHash = '3256173f3f8bffd7df12227c68adf68025edb1832273a9530688a7bb1ed8edec';
+#ifdef InstallerSmokeTest
+  #ifndef StartupTestKey
+    #define StartupTestKey "Software\CamCord\Tests\InstallerSmokeStartup"
+  #endif
+  StartupKey = '{#StartupTestKey}';
+#else
+  StartupKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
+#endif
 
 var
   DownloadPage: TDownloadWizardPage;
   ExtractionPage: TExtractionWizardPage;
+
+function IsAppUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:CAMCORDUPDATE|0}') = '1';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Command: String;
+begin
+  if (CurStep = ssPostInstall) and RegQueryStringValue(HKCU, StartupKey, 'CamCord', Command) then
+    RegWriteStringValue(HKCU, StartupKey, 'CamCord', '"' + ExpandConstant('{app}\CamCord.exe') + '" --startup');
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Command, Expected: String;
+begin
+  Expected := '"' + ExpandConstant('{app}\CamCord.exe') + '" --startup';
+  if (CurUninstallStep = usPostUninstall) and RegQueryStringValue(HKCU, StartupKey, 'CamCord', Command) and
+    (CompareText(Command, Expected) = 0) then RegDeleteValue(HKCU, StartupKey, 'CamCord');
+end;
 
 function RuntimeVersionExists(Root: Integer): Boolean;
 var
@@ -97,13 +128,24 @@ end;
 
 function PrepareFFmpeg: String;
 var
-  EnginePath: String;
+  EnginePath, ExistingEngine: String;
 begin
   Result := '';
   EnginePath := ExpandConstant('{tmp}\ffmpeg-extracted\ffmpeg-9.0.2-essentials_build\bin\ffmpeg.exe');
   try
     if FileExists(EnginePath) then begin
       if CompareText(GetSHA256OfFile(EnginePath), FFmpegBinaryHash) = 0 then Exit;
+    end;
+    ExistingEngine := AddBackslash(WizardDirValue) + 'ffmpeg.exe';
+    if FileExists(ExistingEngine) then begin
+      if CompareText(GetSHA256OfFile(ExistingEngine), FFmpegBinaryHash) = 0 then begin
+        if ForceDirectories(ExtractFileDir(EnginePath)) and FileCopy(ExistingEngine, EnginePath, False) then begin
+          if CompareText(GetSHA256OfFile(EnginePath), FFmpegBinaryHash) = 0 then begin
+            Log('Reused existing FFmpeg executable after SHA-256 verification.');
+            Exit;
+          end;
+        end;
+      end;
     end;
     DownloadPage.Clear;
     DownloadPage.Add(FFmpegUrl, 'ffmpeg-9.0.2-essentials_build.zip', FFmpegArchiveHash);
