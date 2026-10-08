@@ -1,8 +1,11 @@
 #include <windows.h>
+#include "src/Resource.h"
+
+IDI_CAMCORD ICON "assets/branding/camcord.ico"
 
 1 VERSIONINFO
- FILEVERSION 1,4,0,0
- PRODUCTVERSION 1,4,0,0
+ FILEVERSION 1,4,1,0
+ PRODUCTVERSION 1,4,1,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -19,11 +22,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "CamCord\0"
             VALUE "FileDescription", "CamCord Screen Recorder\0"
-            VALUE "FileVersion", "1.4.0\0"
+            VALUE "FileVersion", "1.4.1\0"
             VALUE "InternalName", "CamCord\0"
             VALUE "OriginalFilename", "CamCord.exe\0"
             VALUE "ProductName", "CamCord\0"
-            VALUE "ProductVersion", "1.4.0\0"
+            VALUE "ProductVersion", "1.4.1\0"
         END
     END
     BLOCK "VarFileInfo"

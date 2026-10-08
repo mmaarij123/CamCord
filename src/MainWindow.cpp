@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "AppVersion.h"
+#include "Resource.h"
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -100,6 +101,10 @@ bool MainWindow::Create(HINSTANCE instance, int showCommand) {
     wc.hInstance = instance;
     wc.lpszClassName = L"CamCordMainWindow";
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hIcon = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_CAMCORD), IMAGE_ICON,
+        GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_SHARED));
+    wc.hIconSm = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_CAMCORD), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED));
     wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
     if (!RegisterClassExW(&wc)) return false;
     const UINT dpi = GetDpiForSystem();

@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import re
+import struct
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +48,28 @@ require("FFmpegArchiveHash" in installer and "FFmpegBinaryHash" in installer,
         "installer must verify the downloaded recording engine")
 require("Source: \"..\\bin\\Release\\ffmpeg.exe\"" not in installer,
         "public installer must not embed the development FFmpeg binary")
+
+# The web header, favicon, executable and setup must ship the same approved mark.
+icon = (ROOT / "assets/branding/camcord.ico").read_bytes()
+reserved, kind, count = struct.unpack_from("<HHH", icon)
+require((reserved, kind, count) == (0, 1, 8), "Windows icon must contain all eight DPI sizes")
+sizes = [16, 20, 24, 32, 48, 64, 128, 256]
+offset = 6 + 16 * count
+for index, size in enumerate(sizes):
+    width, height, colors, unused, planes, bits, length, location = struct.unpack_from("<BBBBHHII", icon, 6 + 16 * index)
+    require((width or 256, height or 256, planes, bits) == (size, size, 1, 32), "invalid icon size or color depth")
+    require(location == offset and length > 0 and location + length <= len(icon), "invalid icon image offset")
+    png = icon[location:location + length]
+    require(png[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack_from(">II", png, 16) == (size, size), "invalid PNG icon payload")
+    require(png[25] == 6, "icon transparency must be preserved")
+    if size in (32, 128):
+        relative = "ui/public/favicon.png" if size == 32 else "ui/public/camcord-logo.png"
+        require((ROOT / relative).read_bytes() == png, "web and Windows logo assets must match")
+    offset += length
+require(offset == len(icon), "unexpected trailing icon data")
+require('IDI_CAMCORD ICON "assets/branding/camcord.ico"' in resource, "executable icon resource is missing")
+require("SetupIconFile=..\\assets\\branding\\camcord.ico" in installer, "setup icon is missing")
+require('href="/favicon.png"' in text("ui/index.html"), "favicon is missing")
 
 required = [
     ".github/workflows/windows-release.yml",

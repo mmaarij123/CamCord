@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.4.0"
+  #define MyAppVersion "1.4.1"
 #endif
 
 [Setup]
@@ -30,6 +30,7 @@ Compression=lzma2
 SolidCompression=yes
 ArchiveExtraction=full
 WizardStyle=modern
+SetupIconFile=..\assets\branding\camcord.ico
 UninstallDisplayIcon={app}\CamCord.exe
 RestartApplications=no
 SetupLogging=yes
