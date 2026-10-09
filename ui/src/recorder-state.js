@@ -1,9 +1,10 @@
 import packageInfo from '../package.json' with { type: 'json' };
+import { normalizeBitrate } from './recording-quality.js';
 
 export const INITIAL_STATE = {
   state: 'idle',
   elapsedSeconds: 0,
-  settings: { height: 1080, fps: 60, systemAudio: true, microphone: false, autoCheckUpdates: true },
+  settings: { height: 1080, fps: 60, bitrateMbps: 0, systemAudio: true, microphone: false, autoCheckUpdates: true },
   appVersion: packageInfo.version,
   startupEnabled: false,
   update: { status: 'idle', message: 'Check for updates.', version: '', progress: 0 },
@@ -32,6 +33,7 @@ export function formatElapsed(value) {
 
 export function updateSettings(current, changes) {
   const settings = { ...current, ...changes };
+  settings.bitrateMbps = normalizeBitrate(settings.bitrateMbps);
   if (settings.height !== 1080 && settings.fps === 120) settings.fps = 60;
   return settings;
 }
@@ -50,7 +52,7 @@ export function mergeState(previous, message) {
   return {
     ...previous,
     ...message,
-    settings: { ...previous.settings, ...message.settings },
+    settings: updateSettings(previous.settings, message.settings),
     update: { ...previous.update, ...message.update },
   };
 }

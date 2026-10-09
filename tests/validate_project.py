@@ -29,6 +29,13 @@ require(native_version and native_version.group(1) == package["version"], "updat
 require(re.fullmatch(r"\d+\.\d+\.\d+", package["version"]), "UI package version must be major.minor.patch")
 require((ROOT / "ui/package-lock.json").is_file(), "locked frontend dependencies are required")
 
+ui_bitrates = json.loads(text("ui/src/bitrate-presets.json"))
+native_bitrates = re.search(r"BITRATE_PRESETS_MBPS\{([^}]+)\}", text("src/RecordingQuality.h"))
+require(native_bitrates and [int(value.strip()) for value in native_bitrates.group(1).split(",")] == ui_bitrates,
+        "UI and native bitrate presets must match exactly")
+require(ui_bitrates[0] == 0 and ui_bitrates[-1] == 100 and sorted(set(ui_bitrates)) == ui_bitrates,
+        "bitrate presets must be unique, ascending, Auto through 100 Mbps")
+
 resource = text("resources.rc")
 numeric = re.search(r"FILEVERSION\s+(\d+),(\d+),(\d+),(\d+)", resource)
 string = re.search(r'VALUE "FileVersion",\s*"([0-9.]+)(?:\\0)?"', resource)

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -22,6 +22,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import { BrandMark, SettingRow, Waveform } from './components.jsx';
 import { isNative, sendToHost, subscribeToHost } from './bridge.js';
 import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings, canInstallUpdate } from './recorder-state.js';
+const BitrateControl = lazy(() => import('./BitrateControl.jsx'));
 
 const RESOLUTIONS = [{ height: 480, label: 'SD' }, { height: 720, label: 'HD' }, { height: 1080, label: 'FHD' }];
 const FRAME_RATES = [15, 30, 60];
@@ -217,6 +218,9 @@ export default function App() {
             </ToggleButtonGroup>
             <span className="field-hint">120 FPS is available at 1080p with supported hardware.</span>
           </div>
+          <Suspense fallback={<div className="settings-group bitrate-loading" role="status"><span className="field-label">Video bitrate</span><span className="field-hint">Loading bitrate options…</span></div>}>
+            <BitrateControl settings={app.settings} disabled={settingsDisabled} onChange={changeSettings} />
+          </Suspense>
           <div className="settings-group">
             <span className="field-label">Save location</span>
             <div className="save-location" title={app.outputFolder}>

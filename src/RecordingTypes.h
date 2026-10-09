@@ -8,6 +8,7 @@ struct RecordingSettings {
     int width = 1920;
     int height = 1080;
     int fps = 60;
+    int bitrateMbps = 0; // 0 keeps resolution/FPS-based automatic quality.
     bool systemAudio = true;
     bool microphone = false;
     bool autoCheckUpdates = true;

@@ -49,6 +49,9 @@ jobs:
       - name: Test taskbar and installer icon visibility
         shell: pwsh
         run: .\tests\branding-test.ps1 -CheckBuild
+      - name: Test all bitrate presets with real synthetic encoding
+        shell: pwsh
+        run: .\tests\bitrate-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe
       - name: Test recording finalization and recovery
         shell: pwsh
         run: .\tests\pipeline-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe

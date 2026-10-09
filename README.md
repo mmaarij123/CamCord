@@ -6,6 +6,7 @@ A lightweight screen recorder for every capture you imagine. Available on Window
 
 - **Recording quality:** choose 480p, 720p or 1080p.
 - **Frame rates:** record at 15, 30 or 60 FPS, with 120 FPS at 1080p on supported hardware.
+- **Video bitrate:** Auto, or choose 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 50, 64, 75 or 100 Mbps. See estimated storage use; 32 Mbps and higher show a storage warning. Your choice is remembered.
 - **Audio options:** capture system audio, your microphone, both, or video only.
 - **Pause and resume:** take breaks and save the recording as one video.
 - **Custom save location:** choose a folder or drive inside the app; CamCord remembers your preferences.

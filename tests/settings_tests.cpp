@@ -1,6 +1,7 @@
 // Integration tests use only their isolated output folder, never the user's settings.ini.
 #include "../src/SettingsManager.h"
 #include "../src/OutputManager.h"
+#include "../src/RecordingQuality.h"
 #include <windows.h>
 #include <aclapi.h>
 #include <sddl.h>
@@ -67,7 +68,7 @@ int wmain(int argc, wchar_t** argv) {
         SettingsManager settings(settingsPath.wstring());
         const auto defaults = settings.Load();
         Check(defaults.height == 1080 && defaults.width == 1920 && defaults.fps == 60 &&
-            defaults.systemAudio && !defaults.microphone && defaults.outputFolder.empty(),
+            defaults.systemAudio && !defaults.microphone && defaults.outputFolder.empty() && defaults.bitrateMbps == 0,
             "A fresh settings file did not load expected defaults");
 
         RecordingSettings expected;
@@ -83,6 +84,28 @@ int wmain(int argc, wchar_t** argv) {
         Check(savedBytes.size() >= 2 && savedBytes[0] == 0xff && savedBytes[1] == 0xfe,
             "Unicode settings did not retain the UTF-16 BOM");
         std::cout << "PASS: isolated defaults and Unicode settings round-trip (Urdu, CJK, emoji)\n";
+
+        for (const int bitrate : BITRATE_PRESETS_MBPS) {
+            auto selected = expected; selected.bitrateMbps = bitrate;
+            Check(settings.Save(selected).ok && settings.Load().bitrateMbps == bitrate,
+                "A bitrate preset did not survive restart");
+        }
+        for (const int bitrate : { -1, 3, 101, 1000000 }) {
+            auto selected = expected; selected.bitrateMbps = bitrate;
+            Check(settings.Save(selected).ok && settings.Load().bitrateMbps == 0,
+                "An invalid bitrate did not reset to Auto");
+        }
+        Check(settings.Save(expected).ok, "Could not restore baseline bitrate settings");
+        for (const auto& corrupt : { L"16.5", L"100e2", L"garbage", L"999999999999999999999999" }) {
+            Check(WritePrivateProfileStringW(L"Recording", L"BitrateMbps", corrupt, settingsPath.c_str()) != FALSE,
+                "Could not create isolated corrupt preference");
+            Check(settings.Load().bitrateMbps == 0, "Corrupt saved bitrate was accepted");
+        }
+        Check(WritePrivateProfileStringW(L"Recording", L"BitrateMbps", nullptr, settingsPath.c_str()) != FALSE,
+            "Could not create isolated legacy preference");
+        Check(settings.Load().bitrateMbps == 0, "Legacy settings must retain Auto bitrate");
+        Check(settings.Save(expected).ok, "Could not restore legacy test settings");
+        std::cout << "PASS: all bitrate presets round-trip; invalid bitrate falls back to Auto\n";
 
         auto invalid = expected;
         invalid.outputFolder += L"\r\nMicrophone=0";

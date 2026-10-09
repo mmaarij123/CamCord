@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "AppVersion.h"
 #include "Resource.h"
+#include "RecordingQuality.h"
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -53,7 +54,15 @@ std::wstring JsonString(const std::wstring& json, const wchar_t* key) {
 int JsonInteger(const std::wstring& json, const wchar_t* key, int fallback) {
     const auto position = JsonValueStart(json, key);
     if (position >= json.size()) return fallback;
-    try { return std::stoi(json.substr(position)); } catch (...) { return fallback; }
+    try {
+        size_t consumed = 0;
+        const int value = std::stoi(json.substr(position), &consumed);
+        auto end = position + consumed;
+        while (end < json.size() && iswspace(json[end])) ++end;
+        // Never silently turn fractional/string-valued input into a valid preset.
+        if (end >= json.size() || (json[end] != L',' && json[end] != L'}')) return fallback;
+        return value;
+    } catch (...) { return fallback; }
 }
 
 bool JsonBoolean(const std::wstring& json, const wchar_t* key, bool fallback) {
@@ -82,6 +91,7 @@ RecordingSettings SettingsFromJson(const std::wstring& json, RecordingSettings s
     settings.fps = JsonInteger(json, L"fps", settings.fps);
     if (settings.fps != 15 && settings.fps != 30 && settings.fps != 60 && settings.fps != 120) settings.fps = 60;
     if (settings.height != 1080 && settings.fps == 120) settings.fps = 60;
+    settings.bitrateMbps = NormalizeBitrateMbps(JsonInteger(json, L"bitrateMbps", settings.bitrateMbps));
     settings.systemAudio = JsonBoolean(json, L"systemAudio", settings.systemAudio);
     settings.microphone = JsonBoolean(json, L"microphone", settings.microphone);
     settings.autoCheckUpdates = JsonBoolean(json, L"autoCheckUpdates", settings.autoCheckUpdates);
@@ -259,6 +269,7 @@ void MainWindow::SendState(bool force) {
     std::wostringstream json;
     json << L"{\"type\":\"state\",\"state\":\"" << state << L"\",\"elapsedSeconds\":" << elapsedSeconds_
         << L",\"settings\":{\"height\":" << settings_.height << L",\"fps\":" << settings_.fps
+        << L",\"bitrateMbps\":" << settings_.bitrateMbps
         << L",\"systemAudio\":" << (settings_.systemAudio ? L"true" : L"false")
         << L",\"microphone\":" << (settings_.microphone ? L"true" : L"false")
         << L",\"autoCheckUpdates\":" << (settings_.autoCheckUpdates ? L"true" : L"false")

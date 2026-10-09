@@ -39,6 +39,7 @@
     <ClInclude Include="src\Process.h" /><ClInclude Include="src\HardwareEncoderDetector.h" /><ClInclude Include="src\AudioCaptureEngine.h" />
     <ClInclude Include="src\CaptureEngine.h" /><ClInclude Include="src\RecordingManager.h" /><ClInclude Include="src\RecordingTypes.h" /><ClInclude Include="src\ComPtr.h" />
     <ClInclude Include="src\UpdateManager.h" /><ClInclude Include="src\StartupManager.h" /><ClInclude Include="src\AppVersion.h" /><ClInclude Include="src\Resource.h" />
+    <ClInclude Include="src\RecordingQuality.h" /><ClInclude Include="src\VideoEncoding.h" />
   </ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><ResourceCompile Include="resources.rc" /></ItemGroup>

@@ -10,6 +10,7 @@
   --accent: #f2675f;
   --accent-soft: #f2675f26;
   --green: #72b99a;
+  --warning: #e3ad65;
 }
 
 * { box-sizing: border-box; }
@@ -99,6 +100,25 @@ button:focus-visible, .MuiButtonBase-root:focus-visible { outline: 2px solid #f2
 .settings-group + .settings-group { margin-top: 25px; }
 .field-label { display: block; color: #aeb7c4; font-size: 12px; font-weight: 680; margin-bottom: 9px; }
 .field-hint { display: block; color: #929daf; margin-top: 9px; font-size: 10.5px; line-height: 1.5; }
+.bitrate-picker { color: var(--ink); background: #ffffff05; border-radius: 9px !important; font-size: 12px !important; }
+.bitrate-loading { min-height: 172px; }
+.bitrate-picker .MuiSelect-select { min-height: 24px; display: flex; align-items: center; padding-block: 9px; }
+.bitrate-picker .MuiOutlinedInput-notchedOutline { border-color: var(--line); }
+.bitrate-picker.Mui-disabled { opacity: 0.65; }
+.bitrate-menu { background: var(--panel-raised) !important; border: 1px solid #343b48; border-radius: 10px !important; }
+.bitrate-menu .MuiMenuItem-root { gap: 16px; justify-content: space-between; min-height: 40px; font-size: 12px; }
+.bitrate-option-value { font-family: 'JetBrains Mono Variable', monospace; }
+.bitrate-option-note { display: flex; align-items: center; gap: 5px; color: #b2bccb; font-size: 10.5px; }
+.bitrate-option-note.is-warning { color: var(--warning); }
+.bitrate-option-note svg { font-size: 16px; }
+.bitrate-storage { margin-top: 12px; }
+.storage-estimate { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.storage-estimate > span:first-child { flex-basis: 100%; color: #aeb7c4; font-size: 10.5px; }
+.storage-estimate strong { color: #dce1e9; font-family: 'JetBrains Mono Variable', monospace; font-size: 12px; font-weight: 550; }
+.storage-estimate > span:last-child { color: #aeb7c4; font-size: 10.5px; }
+.storage-warning { display: flex; align-items: center; gap: 7px; margin: 10px 0 0; padding: 9px 10px; color: var(--warning); background: #e3ad6510; border: 1px solid #e3ad6538; border-radius: 8px; font-size: 11px; line-height: 1.5; }
+.storage-warning svg { flex-shrink: 0; font-size: 18px; }
+.storage-note { margin-top: 7px; }
 .resolution-picker, .fps-picker { gap: 7px; }
 .resolution-picker .MuiToggleButtonGroup-grouped, .fps-picker .MuiToggleButtonGroup-grouped { border: 1px solid var(--line) !important; border-radius: 9px !important; margin: 0 !important; color: #97a2b4; background: #ffffff05; transition: background 180ms, border-color 180ms, color 180ms; }
 .resolution-picker .MuiToggleButtonGroup-grouped:hover, .fps-picker .MuiToggleButtonGroup-grouped:hover { color: #ccd3dd; background: #ffffff0b; }

@@ -1,4 +1,5 @@
 #include "SettingsManager.h"
+#include "RecordingQuality.h"
 #include <windows.h>
 #include <shlobj.h>
 #include <filesystem>
@@ -32,6 +33,9 @@ RecordingSettings SettingsManager::Load() const {
     s.fps = GetPrivateProfileIntW(L"Recording", L"Fps", 60, path.c_str());
     if (s.fps != 15 && s.fps != 30 && s.fps != 60 && s.fps != 120) s.fps = 60;
     if (s.fps == 120 && s.height != 1080) s.fps = 60;
+    wchar_t bitrate[64]{};
+    GetPrivateProfileStringW(L"Recording", L"BitrateMbps", L"0", bitrate, 64, path.c_str());
+    s.bitrateMbps = BitrateFromPreference(bitrate);
     s.systemAudio = GetPrivateProfileIntW(L"Recording", L"SystemAudio", 1, path.c_str()) != 0;
     s.microphone = GetPrivateProfileIntW(L"Recording", L"Microphone", 0, path.c_str()) != 0;
     s.autoCheckUpdates = GetPrivateProfileIntW(L"Application", L"AutoCheckUpdates", 1, path.c_str()) != 0;
@@ -47,6 +51,7 @@ OperationResult SettingsManager::Save(const RecordingSettings& s) const {
         return OperationResult::Failure(L"The recording folder contains invalid characters.");
     std::wostringstream content;
     content << L"\xFEFF[Recording]\r\nHeight=" << s.height << L"\r\nFps=" << s.fps
+        << L"\r\nBitrateMbps=" << NormalizeBitrateMbps(s.bitrateMbps)
         << L"\r\nSystemAudio=" << (s.systemAudio ? 1 : 0) << L"\r\nMicrophone=" << (s.microphone ? 1 : 0)
         << L"\r\nOutputFolder=" << s.outputFolder << L"\r\n[Application]\r\nAutoCheckUpdates=" << (s.autoCheckUpdates ? 1 : 0) << L"\r\n";
     const auto text = content.str();

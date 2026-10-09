@@ -1,5 +1,6 @@
 #include "RecordingManager.h"
 #include "Process.h"
+#include "RecordingQuality.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -21,6 +22,7 @@ OperationResult RecordingManager::Initialize() {
 
 OperationResult RecordingManager::Start(RecordingSettings& settings) {
     if (state_ != RecorderState::Idle) return OperationResult::Failure(L"A recording is already active.");
+    settings.bitrateMbps = NormalizeBitrateMbps(settings.bitrateMbps);
     try {
         auto ready = Initialize(); if (!ready.ok) return ready;
         auto space = output_.EnsureFreeSpace(512ull * 1024ull * 1024ull); if (!space.ok) return space;
