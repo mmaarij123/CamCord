@@ -7,7 +7,6 @@ import Switch from '@mui/material/Switch';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
-import DesktopWindowsRounded from '@mui/icons-material/DesktopWindowsRounded';
 import FiberManualRecordRounded from '@mui/icons-material/FiberManualRecordRounded';
 import FolderOpenRounded from '@mui/icons-material/FolderOpenRounded';
 import GraphicEqRounded from '@mui/icons-material/GraphicEqRounded';
@@ -23,6 +22,7 @@ import { BrandMark, SettingRow, Waveform } from './components.jsx';
 import { isNative, sendToHost, subscribeToHost } from './bridge.js';
 import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings, canInstallUpdate } from './recorder-state.js';
 const BitrateControl = lazy(() => import('./BitrateControl.jsx'));
+const CaptureSourceControl = lazy(() => import('./CaptureSourceControl.jsx'));
 
 const RESOLUTIONS = [{ height: 480, label: 'SD' }, { height: 720, label: 'HD' }, { height: 1080, label: 'FHD' }];
 const FRAME_RATES = [15, 30, 60];
@@ -34,6 +34,7 @@ export default function App() {
   const [notice, setNotice] = useState(null);
   const [connected, setConnected] = useState(!isNative);
   const [startupPending, setStartupPending] = useState(false);
+  const [sourcePending, setSourcePending] = useState(false);
   const previewTimeout = useRef(null);
   const currentState = pendingState || app.state;
   const idle = currentState === 'idle';
@@ -42,7 +43,8 @@ export default function App() {
   const busy = !idle && !recording && !paused;
   const installingUpdate = app.update.status === 'installing';
   const updateBusy = ['checking', 'downloading', 'installing'].includes(app.update.status);
-  const settingsDisabled = !idle || !connected || installingUpdate;
+  const selectingSource = sourcePending || app.selectingSource;
+  const settingsDisabled = !idle || !connected || installingUpdate || selectingSource;
   const elapsed = formatElapsed(app.elapsedSeconds);
   const frameRates = app.settings.height === 1080 ? HIGH_FRAME_RATES : FRAME_RATES;
   const width = app.settings.height === 480 ? 854 : app.settings.height === 720 ? 1280 : 1920;
@@ -54,6 +56,7 @@ export default function App() {
       setPendingState('');
       setConnected(true);
       setStartupPending(false);
+      setSourcePending(false);
       if (message.notice?.text) setNotice({ ...message.notice, key: Date.now() });
     });
     sendToHost({ type: 'ready' });
@@ -105,7 +108,7 @@ export default function App() {
   }
 
   function startRecording() {
-    if (settingsDisabled) return;
+    if (settingsDisabled || !app.captureSource.ready) return;
     setPendingState('starting');
     if (!sendToHost({ type: 'start', settings: app.settings })) {
       previewTransition('recording', { elapsedSeconds: 0, encoder: 'Preview mode' });
@@ -133,6 +136,21 @@ export default function App() {
     }
   }
 
+  function changeSource(action) {
+    if (settingsDisabled) return;
+    setSourcePending(true);
+    if (!sendToHost(action)) {
+      setSourcePending(false);
+      if (action.type === 'sourceMode') {
+        setApp((previous) => ({ ...previous, captureSource: { ...previous.captureSource, kind: action.kind,
+          ready: action.kind === 'display', id: action.kind === 'window' ? '' : 'preview-primary', label: action.kind === 'display' ? 'Primary display' : 'Choose a source' } }));
+      } else if (action.type === 'selectSource') {
+        const entry = app.sources.find((source) => source.id === action.id);
+        if (entry) setApp((previous) => ({ ...previous, captureSource: { ...previous.captureSource, id: entry.id, label: entry.label, ready: previous.captureSource.kind !== 'region' } }));
+      } else setNotice({ severity: 'info', text: 'Use the CamCord desktop app to refresh sources or select an area.', key: Date.now() });
+    }
+  }
+
   function openFolder(type) {
     if (!sendToHost({ type })) {
       setNotice({ severity: 'info', text: 'Open the CamCord desktop app to access recording files.', key: Date.now() });
@@ -140,12 +158,16 @@ export default function App() {
   }
 
   const readoutNote = !connected ? 'Connecting to the recorder…'
-    : currentState === 'starting' ? 'Checking your display, audio, and encoder.'
+    : selectingSource ? 'Select your capture area. Press Esc to cancel.'
+    : currentState === 'starting' ? 'Checking your selected source, audio, and encoder.'
       : currentState === 'pausing' ? 'Finishing the current recording segment.'
         : currentState === 'resuming' ? 'Preparing your next recording segment.'
           : currentState === 'saving' ? 'Finalizing video and audio. Saving can take several minutes for long recordings. Keep CamCord open.'
             : paused ? 'Capture is paused. Resume when you are ready.'
-              : recording ? (app.encoder ? `Encoding with ${app.encoder}` : 'Capturing your primary display')
+              : recording ? (app.encoder ? `Encoding with ${app.encoder}` : `Capturing ${app.captureSource.label}`)
+                : !app.captureSource.ready ? 'Choose an available capture source before recording.'
+                  : app.captureSource.kind === 'window' ? 'Only the selected window will be recorded. Keep it restored.'
+                    : app.captureSource.kind === 'region' ? 'Only your selected area will be recorded.'
                 : app.captureExcluded ? 'Your cursor and CamCord controls stay out of the final video.'
                   : 'Your cursor is hidden. Minimize CamCord to keep its controls out of the video.';
 
@@ -188,7 +210,7 @@ export default function App() {
           <Waveform active={recording} paused={paused} />
           <div className="control-dock">
             {idle ? (
-              <Button className="record-button" variant="contained" size="large" disabled={!connected || installingUpdate} startIcon={<FiberManualRecordRounded />} onClick={startRecording}>Start recording</Button>
+              <Button className="record-button" variant="contained" size="large" disabled={settingsDisabled || !app.captureSource.ready} startIcon={<FiberManualRecordRounded />} onClick={startRecording}>Start recording</Button>
             ) : (
               <>
                 <Button className="pause-button" variant="outlined" disabled={busy} startIcon={paused ? <PlayArrowRounded /> : <PauseRounded />} onClick={pauseRecording}>{paused ? 'Resume' : 'Pause'}</Button>
@@ -204,7 +226,10 @@ export default function App() {
         </section>
 
         <aside className="settings-panel" aria-label="Capture setup">
-          <div className="settings-heading"><div><span>Capture setup</span><h2>Recording quality</h2></div><TuneRounded /></div>
+          <div className="settings-heading"><div><span>Capture setup</span><h2>Recording setup</h2></div><TuneRounded /></div>
+          <Suspense fallback={<div className="source-settings source-loading" role="status">Loading capture sources…</div>}>
+            <CaptureSourceControl source={app.captureSource} sources={app.sources} disabled={settingsDisabled} selecting={selectingSource} onAction={changeSource} />
+          </Suspense>
           <div className="settings-group">
             <span className="field-label" id="resolution-label">Resolution</span>
             <ToggleButtonGroup className="resolution-picker" aria-labelledby="resolution-label" exclusive fullWidth value={app.settings.height} disabled={settingsDisabled} onChange={(_, value) => value && changeSettings({ height: value })}>
@@ -235,7 +260,6 @@ export default function App() {
             <SettingRow icon={<GraphicEqRounded />} label="System audio" description="Desktop playback" action={<Switch checked={app.settings.systemAudio} disabled={settingsDisabled} onChange={(event) => changeSettings({ systemAudio: event.target.checked })} slotProps={{ input: { 'aria-label': 'System audio' } }} />} />
             <SettingRow icon={<MicRounded />} label="Microphone" description="Default input" action={<Switch checked={app.settings.microphone} disabled={settingsDisabled} onChange={(event) => changeSettings({ microphone: event.target.checked })} slotProps={{ input: { 'aria-label': 'Microphone' } }} />} />
           </div>
-          <div className="capture-source"><DesktopWindowsRounded /><div><span>Capture source</span><strong>Primary display</strong></div><span className="source-dot" /></div>
           <section className="app-preferences" aria-labelledby="app-preferences-heading">
             <h3 id="app-preferences-heading">App settings</h3>
             <SettingRow icon={<PowerSettingsNewRounded />} label="Launch at Windows startup" description="Open minimized when you sign in" action={<Switch checked={app.startupEnabled} disabled={settingsDisabled || startupPending} onChange={(event) => changeStartup(event.target.checked)} slotProps={{ input: { 'aria-label': 'Launch at Windows startup' } }} />} />

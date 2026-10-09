@@ -12,6 +12,9 @@ export const INITIAL_STATE = {
   outputFolder: 'Videos / CamCord Captures',
   lastOutput: '',
   captureExcluded: false,
+  selectingSource: false,
+  captureSource: { kind: 'display', id: 'preview-primary', label: 'Primary display', ready: true, width: 1920, height: 1080 },
+  sources: [{ kind: 'display', id: 'preview-primary', label: 'Primary display · 1920 × 1080', primary: true }],
 };
 
 export const STATE_LABELS = {
@@ -54,6 +57,8 @@ export function mergeState(previous, message) {
     ...message,
     settings: updateSettings(previous.settings, message.settings),
     update: { ...previous.update, ...message.update },
+    captureSource: { ...previous.captureSource, ...message.captureSource },
+    sources: Array.isArray(message.sources) ? message.sources : previous.sources,
   };
 }
 

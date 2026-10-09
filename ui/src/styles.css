@@ -97,6 +97,21 @@ button:focus-visible, .MuiButtonBase-root:focus-visible { outline: 2px solid #f2
 .settings-heading > svg { color: #7c889a; }
 .settings-heading span { color: #8c98aa; font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.12em; }
 .settings-heading h2 { margin: 3px 0 0; font-size: 19px; line-height: 1.2; }
+.source-settings { padding-bottom: 22px; margin-bottom: 22px; border-bottom: 1px solid var(--line); min-width: 0; }
+.source-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+.source-heading .field-label { margin: 0; }
+.source-heading .MuiIconButton-root { color: #aeb7c4; }
+.source-heading svg { font-size: 18px; }
+.source-mode-picker .MuiToggleButton-root { font-family: 'Manrope Variable', sans-serif; font-size: 11px; }
+.source-detail-label { margin-top: 15px; }
+.source-picker .MuiSelect-select { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; font-size: 11px; }
+.source-option-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.source-menu .MuiMenuItem-root { justify-content: flex-start; }
+.source-settings .select-area-button { margin-top: 10px; min-height: 36px; font-size: 11px; border-color: #c7d3e529; color: #dfe4ec; }
+.source-description { margin-bottom: 0; }
+.source-required { color: var(--warning); margin: 9px 0 0; font-size: 11px; line-height: 1.5; }
+.source-audio-hint { margin-top: 7px; }
+.source-loading { min-height: 200px; color: var(--muted); font-size: 12px; }
 .settings-group + .settings-group { margin-top: 25px; }
 .field-label { display: block; color: #aeb7c4; font-size: 12px; font-weight: 680; margin-bottom: 9px; }
 .field-hint { display: block; color: #929daf; margin-top: 9px; font-size: 10.5px; line-height: 1.5; }

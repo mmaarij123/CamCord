@@ -34,11 +34,13 @@ std::wstring FindFfmpeg() {
     return L"";
 }
 
-ChildProcess::~ChildProcess() { if (Running()) SendQuitAndWait(); Close(); }
+ChildProcess::~ChildProcess() { if (Running()) { if (rawInput_) EndInputAndWait(); else SendQuitAndWait(); } Close(); }
 
-bool ChildProcess::Start(const std::wstring& executable, const std::wstring& arguments, const std::wstring& logPath, bool interactive) {
+bool ChildProcess::Start(const std::wstring& executable, const std::wstring& arguments, const std::wstring& logPath,
+    bool interactive, HANDLE outputPipe, bool rawInput) {
     if (Running()) return false;
     Close();
+    rawInput_ = rawInput;
     SECURITY_ATTRIBUTES sa{ sizeof(sa), nullptr, TRUE };
     HANDLE log = CreateFileW(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (log == INVALID_HANDLE_VALUE) return false;
@@ -56,15 +58,16 @@ bool ChildProcess::Start(const std::wstring& executable, const std::wstring& arg
     STARTUPINFOEXW si{}; si.StartupInfo.cb = sizeof(si);
     si.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW; si.StartupInfo.wShowWindow = SW_HIDE;
     si.StartupInfo.hStdInput = interactive ? stdinRead : nullInput;
-    si.StartupInfo.hStdOutput = log; si.StartupInfo.hStdError = log;
+    si.StartupInfo.hStdOutput = outputPipe ? outputPipe : log; si.StartupInfo.hStdError = log;
     SIZE_T attributeBytes = 0;
     InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
     std::vector<BYTE> attributes(attributeBytes);
     si.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
     const bool initialized = InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &attributeBytes) != FALSE;
-    HANDLE inherited[] = { si.StartupInfo.hStdInput, log };
+    std::vector<HANDLE> inherited{ si.StartupInfo.hStdInput, log };
+    if (outputPipe && outputPipe != log) inherited.push_back(outputPipe);
     const bool restricted = initialized && UpdateProcThreadAttribute(si.lpAttributeList, 0,
-        PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr) != FALSE;
+        PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited.data(), inherited.size() * sizeof(HANDLE), nullptr, nullptr) != FALSE;
     std::wstring cmd = QuoteArg(executable) + L" " + arguments;
     std::vector<wchar_t> mutableCmd(cmd.begin(), cmd.end()); mutableCmd.push_back(L'\0');
     const BOOL ok = restricted && CreateProcessW(executable.c_str(), mutableCmd.data(), nullptr, nullptr, TRUE,
@@ -78,6 +81,7 @@ bool ChildProcess::Start(const std::wstring& executable, const std::wstring& arg
 }
 
 bool ChildProcess::SendQuitAndWait(DWORD timeoutMs) {
+    if (rawInput_) return EndInputAndWait(timeoutMs);
     if (!pi_.hProcess) return true;
     if (stdinWrite_) {
         DWORD written = 0; const char quit[] = "q\n";
@@ -94,6 +98,31 @@ bool ChildProcess::SendQuitAndWait(DWORD timeoutMs) {
 }
 
 DWORD ChildProcess::Wait(DWORD timeoutMs) { return pi_.hProcess ? WaitForSingleObject(pi_.hProcess, timeoutMs) : WAIT_FAILED; }
+bool ChildProcess::WriteInput(const void* bytes, DWORD length) {
+    const auto data = static_cast<const BYTE*>(bytes);
+    DWORD total = 0;
+    while (stdinWrite_ && total < length) {
+        DWORD written = 0;
+        if (!WriteFile(stdinWrite_, data + total, length - total, &written, nullptr) || !written) return false;
+        total += written;
+    }
+    return total == length;
+}
+
+bool ChildProcess::EndInputAndWait(DWORD timeoutMs) {
+    if (stdinWrite_) { CloseHandle(stdinWrite_); stdinWrite_ = nullptr; }
+    if (!pi_.hProcess) return true;
+    if (WaitForSingleObject(pi_.hProcess, timeoutMs) != WAIT_OBJECT_0) {
+        TerminateProcess(pi_.hProcess, 2); WaitForSingleObject(pi_.hProcess, 3000); return false;
+    }
+    return ExitCode() == 0;
+}
+
+void ChildProcess::StopRawProducer() {
+    if (Running()) { TerminateProcess(pi_.hProcess, 0); WaitForSingleObject(pi_.hProcess, INFINITE); }
+    Close();
+}
+
 DWORD ChildProcess::ExitCode() const { DWORD c = ERROR_INVALID_HANDLE; if (pi_.hProcess) GetExitCodeProcess(pi_.hProcess, &c); return c; }
 bool ChildProcess::Running() const { return pi_.hProcess && WaitForSingleObject(pi_.hProcess, 0) == WAIT_TIMEOUT; }
 void ChildProcess::Close() {

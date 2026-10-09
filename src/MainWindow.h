@@ -8,6 +8,7 @@
 #include "SettingsManager.h"
 #include "StartupManager.h"
 #include "UpdateManager.h"
+#include "CaptureSources.h"
 
 class MainWindow {
 public:
@@ -18,6 +19,7 @@ private:
     struct ActionResult { OperationResult result; RecordingSettings settings; };
     enum class UpdateAction { None, Check, Download, Verify };
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    static void CALLBACK SourceDestroyed(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     void InitializeWebView();
     void UpdateWebViewBounds();
@@ -27,6 +29,8 @@ private:
     void UpdateSnapshot();
     void SendState(bool force = false);
     void ChooseOutputFolder();
+    void RefreshSources();
+    void ChooseSourceRegion();
     void SetNotice(std::wstring severity, std::wstring text);
     void ReportFatal(std::wstring text);
     void SaveSettings();
@@ -53,6 +57,10 @@ private:
     bool folderDialogOpen_ = false;
     bool captureExcluded_ = false;
     bool fatalCloseRequested_ = false;
+    bool selectingSource_ = false, sourceLost_ = false, selectionInvalid_ = false;
+    HWINEVENTHOOK sourceEvents_ = nullptr;
+    DWORD sourceSelectedAt_ = 0;
+    std::vector<CaptureSourceEntry> captureSources_;
     StartupManager startup_;
     UpdateManager updater_;
     std::future<UpdateResult> updateTask_;

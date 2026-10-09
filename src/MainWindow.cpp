@@ -2,6 +2,7 @@
 #include "AppVersion.h"
 #include "Resource.h"
 #include "RecordingQuality.h"
+#include "RegionSelector.h"
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -19,6 +20,9 @@ constexpr UINT_PTR TIMER_RECORDING = 1;
 constexpr UINT WM_CHOOSE_FOLDER = WM_APP + 1;
 constexpr UINT WM_FATAL_ERROR = WM_APP + 2;
 constexpr UINT WM_INSTALL_UPDATE = WM_APP + 3;
+constexpr UINT WM_PICK_REGION = WM_APP + 4;
+constexpr UINT WM_SOURCE_DESTROYED = WM_APP + 5;
+HWND sourceEventWindow = nullptr;
 constexpr wchar_t APP_URL[] = L"https://app.camcord/index.html";
 
 std::wstring ExecutableDirectory() {
@@ -102,6 +106,8 @@ RecordingSettings SettingsFromJson(const std::wstring& json, RecordingSettings s
 bool MainWindow::Create(HINSTANCE instance, int showCommand) {
     instance_ = instance;
     settings_ = settingsManager_.Load();
+    RefreshSources();
+    settings_.captureTarget = PrimaryCaptureDisplay();
     startupEnabled_ = startup_.IsEnabled();
     nextUpdateCheck_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     recorder_.SetOutputFolder(settings_.outputFolder);
@@ -124,6 +130,9 @@ bool MainWindow::Create(HINSTANCE instance, int showCommand) {
         CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
         nullptr, nullptr, instance, this);
     if (!hwnd_) return false;
+    sourceEventWindow = hwnd_;
+    sourceEvents_ = SetWinEventHook(EVENT_OBJECT_DESTROY, EVENT_OBJECT_DESTROY, nullptr, SourceDestroyed, 0, 0,
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     BOOL dark = TRUE;
     DwmSetWindowAttribute(hwnd_, 20, &dark, sizeof(dark));
     captureExcluded_ = SetWindowDisplayAffinity(hwnd_, WDA_EXCLUDEFROMCAPTURE) != FALSE;
@@ -139,6 +148,11 @@ int MainWindow::Run() {
         DispatchMessageW(&message);
     }
     return static_cast<int>(message.wParam);
+}
+
+void CALLBACK MainWindow::SourceDestroyed(HWINEVENTHOOK, DWORD, HWND window, LONG object, LONG child, DWORD, DWORD eventTime) {
+    if (sourceEventWindow && object == OBJID_WINDOW && child == CHILDID_SELF)
+        PostMessageW(sourceEventWindow, WM_SOURCE_DESTROYED, reinterpret_cast<WPARAM>(window), static_cast<LPARAM>(eventTime));
 }
 
 LRESULT CALLBACK MainWindow::WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -266,6 +280,9 @@ void MainWindow::SendState(bool force) {
     else if (snapshotState_ == RecorderState::Recording) state = L"recording";
     else if (snapshotState_ == RecorderState::Paused) state = L"paused";
     const auto lastName = lastOutput_.empty() ? L"" : std::filesystem::path(lastOutput_).filename().wstring();
+    auto target = settings_.captureTarget;
+    const bool sourceReady = !selectionInvalid_ && ResolveCaptureTarget(target).ok;
+    const auto kindName = [](CaptureKind kind) { return kind == CaptureKind::Window ? L"window" : kind == CaptureKind::Region ? L"region" : L"display"; };
     std::wostringstream json;
     json << L"{\"type\":\"state\",\"state\":\"" << state << L"\",\"elapsedSeconds\":" << elapsedSeconds_
         << L",\"settings\":{\"height\":" << settings_.height << L",\"fps\":" << settings_.fps
@@ -281,6 +298,20 @@ void MainWindow::SendState(bool force) {
         << L",\"update\":{\"status\":\"" << JsonEscape(updateStatus_) << L"\",\"message\":\"" << JsonEscape(updateMessage_)
         << L"\",\"version\":\"" << JsonEscape(std::wstring(updateInfo_.version.begin(), updateInfo_.version.end()))
         << L"\",\"progress\":" << updater_.Progress() << L"}";
+    json << L",\"selectingSource\":" << (selectingSource_ ? L"true" : L"false")
+        << L",\"captureSource\":{\"kind\":\"" << kindName(target.kind) << L"\",\"id\":\""
+        << (target.handle ? CaptureSourceId(target) : L"") << L"\",\"label\":\"" << JsonEscape(target.label)
+        << L"\",\"ready\":" << (sourceReady ? L"true" : L"false")
+        << L",\"width\":" << (target.kind == CaptureKind::Region ? target.regionWidth : target.sourceWidth)
+        << L",\"height\":" << (target.kind == CaptureKind::Region ? target.regionHeight : target.sourceHeight) << L"},\"sources\":[";
+    bool firstSource = true;
+    for (const auto& entry : captureSources_) {
+        if (!firstSource) json << L",";
+        firstSource = false;
+        json << L"{\"id\":\"" << entry.id << L"\",\"kind\":\"" << kindName(entry.target.kind)
+            << L"\",\"label\":\"" << JsonEscape(entry.target.label) << L"\",\"primary\":" << (entry.primary ? L"true" : L"false") << L"}";
+    }
+    json << L"]";
     if (!noticeText_.empty()) json << L",\"notice\":{\"severity\":\"" << JsonEscape(noticeSeverity_)
         << L"\",\"text\":\"" << JsonEscape(noticeText_) << L"\"}";
     json << L"}";
@@ -344,11 +375,13 @@ void MainWindow::PollAction() {
     }
     else if (completed == Action::Stop) {
         SetNotice(unexpectedStop_ ? L"warning" : L"success", unexpectedStop_
-            ? L"Recording stopped unexpectedly. The completed portion was recovered."
+            ? (sourceLost_ ? L"The selected source closed, was minimized or disconnected. The completed portion was saved."
+                : L"Recording stopped unexpectedly. The completed portion was recovered.")
             : L"Recording saved successfully.");
     } else if (completed == Action::SetFolder) SetNotice(L"success", L"New recordings will be saved in the selected folder.");
     if (completed == Action::Start || completed == Action::SetFolder) SaveSettings();
     unexpectedStop_ = false;
+    sourceLost_ = false;
     if (snapshotState_ == RecorderState::Idle) ShutdownBlockReasonDestroy(hwnd_);
     SendState();
     if (closeRequested_) {
@@ -470,9 +503,26 @@ void MainWindow::ChooseOutputFolder() {
     }
 }
 
+void MainWindow::RefreshSources() {
+    captureSources_ = EnumerateCaptureSources();
+}
+
+void MainWindow::ChooseSourceRegion() {
+    if (pending_ != Action::None || snapshotState_ != RecorderState::Idle || folderDialogOpen_ || closeRequested_ ||
+        updateStatus_ == L"installing" || settings_.captureTarget.kind != CaptureKind::Region) { SendState(true); return; }
+    auto display = settings_.captureTarget; display.kind = CaptureKind::Display;
+    const auto available = ResolveCaptureTarget(display);
+    if (!available.ok) { SetNotice(L"error", available.message); SendState(true); return; }
+    folderDialogOpen_ = true; selectingSource_ = true; SendState(true);
+    CaptureTarget selected;
+    if (ChooseCaptureRegion(hwnd_, display, selected)) { settings_.captureTarget = std::move(selected); selectionInvalid_ = false; }
+    folderDialogOpen_ = false; selectingSource_ = false;
+    SendState(true);
+}
+
 void MainWindow::HandleWebMessage(const std::wstring& message) {
     const auto type = JsonString(message, L"type");
-    if (type == L"ready") { webReady_ = true; SendState(true); return; }
+    if (type == L"ready") { webReady_ = true; RefreshSources(); SendState(true); return; }
     if (closeRequested_ || updateStatus_ == L"installing") { SendState(true); return; }
     if (type == L"checkUpdates") { BeginUpdate(UpdateAction::Check, true); return; }
     if (type == L"downloadUpdate" && updateStatus_ == L"available") { BeginUpdate(UpdateAction::Download, true); return; }
@@ -482,7 +532,36 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         return;
     }
     if (pending_ != Action::None || folderDialogOpen_) { SendState(true); return; }
-    if (type == L"settings" && snapshotState_ == RecorderState::Idle) {
+    if (snapshotState_ == RecorderState::Idle && type == L"refreshSources") { RefreshSources(); SendState(true); }
+    else if (snapshotState_ == RecorderState::Idle && type == L"sourceMode") {
+        const auto kind = JsonString(message, L"kind");
+        RefreshSources();
+        auto display = PrimaryCaptureDisplay();
+        if (settings_.captureTarget.kind != CaptureKind::Window) {
+            for (const auto& entry : captureSources_) if (entry.target.kind == CaptureKind::Display &&
+                entry.target.handle == settings_.captureTarget.handle) { display = entry.target; break; }
+        }
+        if (kind == L"display") settings_.captureTarget = display;
+        else if (kind == L"window") { settings_.captureTarget = {}; settings_.captureTarget.kind = CaptureKind::Window; settings_.captureTarget.label = L"Choose a window"; }
+        else if (kind == L"region") {
+            settings_.captureTarget = display; settings_.captureTarget.kind = CaptureKind::Region;
+            settings_.captureTarget.label = L"Select an area";
+        } else { SendState(true); return; }
+        selectionInvalid_ = false;
+        sourceSelectedAt_ = GetTickCount();
+        RefreshSources(); SendState(true);
+    } else if (snapshotState_ == RecorderState::Idle && type == L"selectSource") {
+        const auto id = JsonString(message, L"id");
+        const bool windowMode = settings_.captureTarget.kind == CaptureKind::Window;
+        for (const auto& entry : captureSources_) if (entry.id == id && (entry.target.kind == CaptureKind::Window) == windowMode) {
+            if (windowMode || settings_.captureTarget.kind == CaptureKind::Display) settings_.captureTarget = entry.target;
+            else { settings_.captureTarget = entry.target; settings_.captureTarget.kind = CaptureKind::Region; settings_.captureTarget.label = L"Select an area"; }
+            selectionInvalid_ = false; sourceSelectedAt_ = GetTickCount(); SendState(true); return;
+        }
+        SetNotice(L"warning", L"That source is no longer in the list. Refresh and choose it again."); SendState(true);
+    } else if (snapshotState_ == RecorderState::Idle && type == L"pickRegion" && settings_.captureTarget.kind == CaptureKind::Region) {
+        PostMessageW(hwnd_, WM_PICK_REGION, 0, 0);
+    } else if (type == L"settings" && snapshotState_ == RecorderState::Idle) {
         const bool wasAutomatic = settings_.autoCheckUpdates;
         settings_ = SettingsFromJson(message, settings_);
         if (wasAutomatic != settings_.autoCheckUpdates) {
@@ -496,6 +575,7 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         if (!result.ok) SetNotice(L"error", result.message);
         SendState(true);
     } else if (type == L"start" && snapshotState_ == RecorderState::Idle) {
+        if (selectionInvalid_) { SetNotice(L"warning", L"The source changed or closed. Select it again before recording."); SendState(true); return; }
         settings_ = SettingsFromJson(message, settings_); SaveSettings(); BeginAction(Action::Start);
     } else if (type == L"pause") {
         if (snapshotState_ == RecorderState::Recording) BeginAction(Action::Pause);
@@ -538,7 +618,12 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             PollUpdate();
             if (pending_ == Action::None) {
                 UpdateSnapshot();
-                if (snapshotState_ == RecorderState::Recording && !recorder_.CaptureAlive()) {
+                const auto& target = settings_.captureTarget;
+                const bool missing = selectionInvalid_ || !CaptureSourceExists(target) || (target.kind == CaptureKind::Window &&
+                    (IsIconic(reinterpret_cast<HWND>(target.handle)) || !IsWindowVisible(reinterpret_cast<HWND>(target.handle))));
+                if ((snapshotState_ == RecorderState::Recording || snapshotState_ == RecorderState::Paused) && missing) {
+                    selectionInvalid_ = true; sourceLost_ = true; unexpectedStop_ = true; BeginAction(Action::Stop);
+                } else if (snapshotState_ == RecorderState::Recording && !recorder_.CaptureAlive()) {
                     unexpectedStop_ = true; BeginAction(Action::Stop);
                 }
             }
@@ -546,6 +631,16 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         return 0;
     case WM_CHOOSE_FOLDER: ChooseOutputFolder(); return 0;
+    case WM_PICK_REGION: ChooseSourceRegion(); return 0;
+    case WM_SOURCE_DESTROYED:
+        if (settings_.captureTarget.kind == CaptureKind::Window && settings_.captureTarget.handle == static_cast<unsigned long long>(wParam) &&
+            static_cast<LONG>(static_cast<DWORD>(lParam) - sourceSelectedAt_) >= 0) {
+            selectionInvalid_ = true; SendState(true);
+        }
+        return 0;
+    case WM_DISPLAYCHANGE:
+        if (!CaptureSourceExists(settings_.captureTarget)) selectionInvalid_ = true;
+        RefreshSources(); SendState(true); return 0;
     case WM_INSTALL_UPDATE: InstallUpdate(); return 0;
     case WM_FATAL_ERROR:
         MessageBoxW(hwnd_, fatalError_.c_str(), L"CamCord", MB_OK | MB_ICONERROR);
@@ -570,6 +665,8 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         DestroyWindow(hwnd_);
         return 0;
     case WM_DESTROY:
+        sourceEventWindow = nullptr;
+        if (sourceEvents_) { UnhookWinEvent(sourceEvents_); sourceEvents_ = nullptr; }
         KillTimer(hwnd_, TIMER_RECORDING);
         ShutdownBlockReasonDestroy(hwnd_);
         if (task_.valid()) task_.wait();

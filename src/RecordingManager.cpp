@@ -1,6 +1,7 @@
 #include "RecordingManager.h"
 #include "Process.h"
 #include "RecordingQuality.h"
+#include "CaptureSources.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -23,6 +24,8 @@ OperationResult RecordingManager::Initialize() {
 OperationResult RecordingManager::Start(RecordingSettings& settings) {
     if (state_ != RecorderState::Idle) return OperationResult::Failure(L"A recording is already active.");
     settings.bitrateMbps = NormalizeBitrateMbps(settings.bitrateMbps);
+    const auto source = ResolveCaptureTarget(settings.captureTarget);
+    if (!source.ok) return source;
     try {
         auto ready = Initialize(); if (!ready.ok) return ready;
         auto space = output_.EnsureFreeSpace(512ull * 1024ull * 1024ull); if (!space.ok) return space;
@@ -70,7 +73,10 @@ OperationResult RecordingManager::StartSegment() {
     if (settings_.microphone) seg.micTrimMs = std::chrono::duration_cast<std::chrono::milliseconds>(videoLaunch - microphone_->StartedAt()).count();
     auto video = capture_->Start(ffmpeg_, seg.video, seg.log, settings_, encoder_);
     if (!video.ok) { systemAudio_->Stop(); microphone_->Stop(); capture_.reset(); return Failure(video.message); }
-    segments_.push_back(seg); segmentStarted_ = videoLaunch; state_ = RecorderState::Recording;
+    const auto videoStarted = capture_->StartedAt();
+    if (settings_.systemAudio) seg.systemTrimMs = std::chrono::duration_cast<std::chrono::milliseconds>(videoStarted - systemAudio_->StartedAt()).count();
+    if (settings_.microphone) seg.micTrimMs = std::chrono::duration_cast<std::chrono::milliseconds>(videoStarted - microphone_->StartedAt()).count();
+    segments_.push_back(seg); segmentStarted_ = videoStarted; state_ = RecorderState::Recording;
     return OperationResult::Success();
 }
 

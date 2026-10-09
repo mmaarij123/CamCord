@@ -33,6 +33,7 @@
     <ClCompile Include="src\SettingsManager.cpp" /><ClCompile Include="src\Process.cpp" /><ClCompile Include="src\HardwareEncoderDetector.cpp" />
     <ClCompile Include="src\AudioCaptureEngine.cpp" /><ClCompile Include="src\CaptureEngine.cpp" /><ClCompile Include="src\RecordingManager.cpp" />
     <ClCompile Include="src\UpdateManager.cpp" /><ClCompile Include="src\StartupManager.cpp" />
+    <ClCompile Include="src\CaptureSources.cpp" /><ClCompile Include="src\RegionSelector.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\MainWindow.h" /><ClInclude Include="src\OutputManager.h" /><ClInclude Include="src\SettingsManager.h" />
@@ -40,6 +41,7 @@
     <ClInclude Include="src\CaptureEngine.h" /><ClInclude Include="src\RecordingManager.h" /><ClInclude Include="src\RecordingTypes.h" /><ClInclude Include="src\ComPtr.h" />
     <ClInclude Include="src\UpdateManager.h" /><ClInclude Include="src\StartupManager.h" /><ClInclude Include="src\AppVersion.h" /><ClInclude Include="src\Resource.h" />
     <ClInclude Include="src\RecordingQuality.h" /><ClInclude Include="src\VideoEncoding.h" />
+    <ClInclude Include="src\CaptureSources.h" /><ClInclude Include="src\RegionSelector.h" />
   </ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><ResourceCompile Include="resources.rc" /></ItemGroup>

@@ -74,9 +74,12 @@ int wmain(int argc, wchar_t** argv) {
         RecordingSettings expected;
         expected.height = 720; expected.width = 1280; expected.fps = 30;
         expected.systemAudio = false; expected.microphone = true;
+        expected.captureTarget.kind = CaptureKind::Window; expected.captureTarget.handle = 1234;
         expected.outputFolder = (root / L"Recordings \u0631\u06cc\u06a9\u0627\u0631\u0688\u0646\u06af \u5f55\u5236 \U0001F3AC").wstring();
         Check(settings.Save(expected).ok, "Unicode settings save failed");
         const auto actual = settings.Load();
+        Check(actual.captureTarget.kind == CaptureKind::Display && actual.captureTarget.handle == 0,
+            "Session-only source handles must never persist across restarts");
         Check(actual.height == expected.height && actual.width == expected.width && actual.fps == expected.fps &&
             actual.systemAudio == expected.systemAudio && actual.microphone == expected.microphone &&
             actual.outputFolder == expected.outputFolder, "Unicode settings did not round-trip exactly");
