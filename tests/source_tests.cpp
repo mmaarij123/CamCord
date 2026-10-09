@@ -29,6 +29,16 @@ static void Pump(DWORD duration) {
 }
 
 int wmain(int argc, wchar_t** argv) {
+    // Owned fake FFmpeg: produces only synthetic BGRA bytes and simulates an
+    // encoder that never consumes stdin. No user screen/audio is accessed.
+    if (argc > 3 && std::wstring(argv[1]) == L"-hide_banner") {
+        std::vector<BYTE> frame(640 * 360 * 4, 128);
+        for (;;) {
+            DWORD written = 0;
+            if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), frame.data(), static_cast<DWORD>(frame.size()), &written, nullptr)) return 0;
+        }
+    }
+    if (argc > 3 && std::wstring(argv[1]) == L"-y") { Sleep(60000); return 0; }
     if (argc < 3 || argc > 5) return 2;
     const bool live = argc >= 4 && std::wstring(argv[3]) == L"--live-window";
     const bool hardware = argc == 5 && std::wstring(argv[4]) == L"--hardware";
@@ -71,6 +81,25 @@ int wmain(int argc, wchar_t** argv) {
             CaptureInputFilter(window, 30).find(L"hmonitor=") == std::wstring::npos, "Window capture substituted a desktop crop");
         Check(!ResolveCaptureTarget(window).ok, "Hidden window should require restoration");
         std::cout << "PASS: specific HWND, identity check, no title matching/desktop fallback, hidden-window rejection\n";
+
+        {
+            ShowWindow(fixture, SW_SHOWNOACTIVATE); UpdateWindow(fixture);
+            RecordingSettings syntheticSettings; syntheticSettings.width = 640; syntheticSettings.height = 360;
+            syntheticSettings.fps = 30; syntheticSettings.systemAudio = syntheticSettings.microphone = false;
+            syntheticSettings.captureTarget = CaptureWindowTarget(fixture);
+            std::vector<wchar_t> executable(32768);
+            const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+            Check(length && length < executable.size(), "Cannot locate synthetic bridge fixture");
+            CaptureEngine stalled;
+            Check(stalled.Start(std::wstring(executable.data(), length), (root / L"stalled.mp4").wstring(),
+                (root / L"stalled.log").wstring(), syntheticSettings, {L"libx264",L"Synthetic",false}).ok,
+                "Synthetic bridge did not start");
+            const auto began = GetTickCount64();
+            Check(!stalled.Stop(250).ok && !stalled.Running() && GetTickCount64() - began < 3000,
+                "Capture stop deadline did not cover blocked raw-input writer");
+            ShowWindow(fixture, SW_HIDE);
+            std::cout << "PASS: full producer/bridge/stalled-encoder stop returns within deadline and reports failure\n";
+        }
 
         // Independently validate the crop with synthetic media, never desktop pixels.
         const auto synthetic = root / L"crop.mp4";

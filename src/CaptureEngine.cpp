@@ -11,25 +11,32 @@ struct CaptureEngine::StreamBridge {
     ChildProcess producer;
     HANDLE input = nullptr;
     std::thread reader, writer;
-    std::atomic<bool> stopping{false}, failed{false};
+    std::atomic<bool> stopping{false}, failed{false}, cancelWrite{false};
+    std::atomic<ULONGLONG> writeStarted{0};
     std::mutex mutex;
     std::condition_variable changed;
     std::shared_ptr<std::vector<BYTE>> latest;
-    void Stop() {
+    void Stop(DWORD writerTimeout = 30000) {
         stopping = true; changed.notify_all();
         // Producer owns no encoded video: cancelling its frame wait cannot lose
         // buffered MP4 data. The encoder is separately drained by pipe EOF.
         producer.StopRawProducer();
         if (reader.joinable()) reader.join();
-        if (writer.joinable()) writer.join();
+        const auto began = writeStarted.load();
+        if (began && GetTickCount64() - began >= 30000) writerTimeout = 0;
+        if (!JoinInputWriter(writer, cancelWrite, writerTimeout)) failed = true;
         if (input) { CloseHandle(input); input = nullptr; }
     }
     ~StreamBridge() { Stop(); }
 };
 
 CaptureEngine::CaptureEngine() = default;
-CaptureEngine::~CaptureEngine() { if (bridge_) { bridge_->Stop(); process_.EndInputAndWait(); process_.Close(); } }
-bool CaptureEngine::Running() const { return process_.Running() && bridge_ && !bridge_->failed; }
+CaptureEngine::~CaptureEngine() { if (bridge_) Stop(); }
+bool CaptureEngine::Running() const {
+    if (!process_.Running() || !bridge_ || bridge_->failed) return false;
+    const auto began = bridge_->writeStarted.load();
+    return !began || GetTickCount64() - began < 30000;
+}
 
 OperationResult CaptureEngine::Start(const std::wstring& ffmpeg, const std::wstring& output, const std::wstring& log,
     const RecordingSettings& settings, const EncoderChoice& encoder) {
@@ -87,16 +94,21 @@ OperationResult CaptureEngine::Start(const std::wstring& ffmpeg, const std::wstr
     if (!process_.Start(ffmpeg, encoderArgs, log, true, nullptr, true)) { bridge_.reset(); return OperationResult::Failure(L"The video encoder could not be started."); }
     startedAt_ = std::chrono::steady_clock::now();
     stream->writer = std::thread([this, stream, frameBytes, fps = settings.fps] {
-        const auto interval = std::chrono::nanoseconds(1000000000ll / fps);
-        auto next = std::chrono::steady_clock::now();
-        while (!stream->stopping && !stream->failed) {
-            std::shared_ptr<std::vector<BYTE>> frame;
-            { std::lock_guard lock(stream->mutex); frame = stream->latest; }
-            if (frame && !process_.WriteInput(frame->data(), frameBytes)) { stream->failed = true; break; }
-            next += interval;
-            std::unique_lock lock(stream->mutex);
-            stream->changed.wait_until(lock, next, [stream] { return stream->stopping.load() || stream->failed.load(); });
-        }
+        try {
+            const auto interval = std::chrono::nanoseconds(1000000000ll / fps);
+            auto next = std::chrono::steady_clock::now();
+            while (!stream->stopping && !stream->failed) {
+                std::shared_ptr<std::vector<BYTE>> frame;
+                { std::lock_guard lock(stream->mutex); frame = stream->latest; }
+                stream->writeStarted = GetTickCount64();
+                if (frame && !process_.WriteInput(frame->data(), frameBytes, &stream->cancelWrite)) { stream->failed = true; break; }
+                stream->writeStarted = 0;
+                next += interval;
+                std::unique_lock lock(stream->mutex);
+                stream->changed.wait_until(lock, next, [stream] { return stream->stopping.load() || stream->failed.load(); });
+            }
+        } catch (...) { stream->failed = true; }
+        stream->changed.notify_all();
     });
     Sleep(700);
     if (!Running()) { Stop(); return OperationResult::Failure(L"The selected source or video encoder stopped during startup. See the session log."); }
@@ -105,8 +117,16 @@ OperationResult CaptureEngine::Start(const std::wstring& ffmpeg, const std::wstr
 
 OperationResult CaptureEngine::Stop(DWORD timeoutMs) {
     const bool wasAlive = process_.Running();
-    if (bridge_) bridge_->Stop();
-    const bool clean = process_.EndInputAndWait(timeoutMs);
+    const auto beforeStop = GetTickCount64();
+    if (bridge_) bridge_->Stop(timeoutMs == INFINITE ? 30000 : timeoutMs);
+    const bool cancelledWrite = bridge_ && bridge_->cancelWrite.load();
+    if (timeoutMs != INFINITE) {
+        const auto elapsed = GetTickCount64() - beforeStop;
+        timeoutMs = elapsed >= timeoutMs ? 0 : timeoutMs - static_cast<DWORD>(elapsed);
+    }
+    // A cancelled frame means this encoder stopped consuming input. Do not
+    // wait forever on that failed process; healthy encoders still drain fully.
+    const bool clean = process_.EndInputAndWait(cancelledWrite && timeoutMs == INFINITE ? 3000 : timeoutMs);
     process_.Close(); bridge_.reset();
-    return wasAlive && clean ? OperationResult::Success() : OperationResult::Failure(L"Recording stopped unexpectedly; recovery files were retained.");
+    return wasAlive && clean && !cancelledWrite ? OperationResult::Success() : OperationResult::Failure(L"Recording stopped unexpectedly; recovery files were retained.");
 }

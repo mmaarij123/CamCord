@@ -1,6 +1,8 @@
 #pragma once
 #include <windows.h>
 #include <string>
+#include <atomic>
+#include <thread>
 
 class ChildProcess {
 public:
@@ -10,7 +12,7 @@ public:
     ChildProcess& operator=(const ChildProcess&) = delete;
     bool Start(const std::wstring& executable, const std::wstring& arguments, const std::wstring& logPath, bool interactive,
         HANDLE outputPipe = nullptr, bool rawInput = false);
-    bool WriteInput(const void* bytes, DWORD length);
+    bool WriteInput(const void* bytes, DWORD length, const std::atomic<bool>* cancelled = nullptr);
     bool EndInputAndWait(DWORD timeoutMs = INFINITE);
     void StopRawProducer(); // Only for an unencoded capture producer, never a video encoder.
     // Capture shutdown drains the encoder on a background worker. A fixed time
@@ -29,3 +31,6 @@ private:
 
 std::wstring QuoteArg(const std::wstring& value);
 std::wstring FindFfmpeg();
+// Finish an in-flight raw frame normally; cancel a blocked pipe writer only
+// after the deadline. This does not impose a limit on encoded-output draining.
+bool JoinInputWriter(std::thread& writer, std::atomic<bool>& cancelled, DWORD timeoutMs = 30000);

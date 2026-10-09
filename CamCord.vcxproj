@@ -42,6 +42,7 @@
     <ClInclude Include="src\UpdateManager.h" /><ClInclude Include="src\StartupManager.h" /><ClInclude Include="src\AppVersion.h" /><ClInclude Include="src\Resource.h" />
     <ClInclude Include="src\RecordingQuality.h" /><ClInclude Include="src\VideoEncoding.h" />
     <ClInclude Include="src\CaptureSources.h" /><ClInclude Include="src\RegionSelector.h" />
+    <ClInclude Include="src\HostMessage.h" />
   </ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><ResourceCompile Include="resources.rc" /></ItemGroup>

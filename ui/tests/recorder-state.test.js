@@ -23,6 +23,7 @@ test('update downloads preserve capture preferences and installation waits for i
   }
   assert.equal(canInstallUpdate({ ...next, state: 'idle', update: { status: 'ready' } }), true);
   assert.equal(canInstallUpdate({ ...next, state: 'idle', update: { status: 'error' } }), false);
+  assert.equal(canInstallUpdate({ ...next, state: 'idle', selectingSource: true, update: { status: 'ready' } }), false);
 });
 
 test('switching resolution preserves valid FPS and clamps 120 FPS outside 1080p', () => {
@@ -49,4 +50,15 @@ test('partial native updates preserve recording preferences and folder paths', (
   assert.equal(next.settings.fps, 30);
   assert.equal(next.outputFolder, 'D:\\Recordings');
   assert.equal(previous.settings.fps, 60);
+});
+
+test('malformed nested host state cannot crash source controls or alerts', () => {
+  for (const fields of [{ sources: [null] }, { sources: [{}] }, { sources: {} },
+    { captureSource: [] }, { captureSource: { ready: 'yes' } }, { settings: { microphone: {} } },
+    { update: { message: {} } }, { notice: { text: {}, severity: 'error' } },
+    { notice: { text: 'bad', severity: 'invalid' } }, { outputFolder: {} }]) {
+    assert.equal(parseStateMessage({ type: 'state', state: 'idle', ...fields }), null);
+  }
+  assert.ok(parseStateMessage({ type: 'state', state: 'idle', sources: [], captureSource: { kind: 'region', ready: false },
+    notice: { text: 'Choose a source', severity: 'warning' } }));
 });

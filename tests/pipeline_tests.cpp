@@ -33,6 +33,10 @@ struct PipelineTestAccess {
 };
 
 int wmain(int argc, wchar_t** argv) {
+    if (argc == 2 && std::wstring(argv[1]) == L"--blocked-input") {
+        Sleep(60000); // Deliberately never read stdin; owned synthetic child only.
+        return 0;
+    }
     if (argc == 2 && std::wstring(argv[1]) == L"--slow-quit") {
         std::string command;
         std::getline(std::cin, command);
@@ -70,6 +74,25 @@ int wmain(int argc, wchar_t** argv) {
             std::vector<wchar_t> executable(32768);
             const DWORD length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
             Check(length && length < executable.size(), "Could not locate synthetic child process");
+            ChildProcess blocked;
+            Check(blocked.Start(std::wstring(executable.data(), length), L"--blocked-input",
+                (root / L"blocked-input.log").wstring(), true, nullptr, true), "Could not start blocked-input fixture");
+            std::atomic<bool> cancelled{false}, entered{false};
+            bool wrote = true;
+            std::vector<BYTE> frame(1024 * 1024);
+            std::thread writer([&] { entered = true; wrote = blocked.WriteInput(frame.data(), static_cast<DWORD>(frame.size()), &cancelled); });
+            while (!entered) Sleep(1);
+            const auto began = GetTickCount64();
+            Check(!JoinInputWriter(writer, cancelled, 150) && cancelled && !wrote && GetTickCount64() - began < 3000,
+                "Blocked raw-input writer was not cancelled and joined within deadline");
+            Check(!blocked.EndInputAndWait(150), "Non-reading fixture should report shutdown failure, not success");
+            blocked.Close();
+            std::thread normal([] { Sleep(50); });
+            cancelled = false;
+            Check(JoinInputWriter(normal, cancelled, 1000) && !cancelled, "Healthy writer was cancelled instead of finishing");
+            cancelled = true;
+            Check(!blocked.WriteInput(frame.data(), 1, &cancelled), "Cancelled writer issued another input write");
+            std::cout << "PASS: stalled pipe writer cancels/joins; failed child is bounded; healthy frame writer is preserved\n";
             ChildProcess delayed;
             Check(delayed.Start(std::wstring(executable.data(), length), L"--slow-quit",
                 (root / L"slow-quit.log").wstring(), true), "Could not start synthetic delayed encoder");

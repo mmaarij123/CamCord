@@ -61,6 +61,9 @@ jobs:
       - name: Test updater and startup preferences
         shell: pwsh
         run: .\tests\app-features-test.ps1
+      - name: Test native modal selection and shutdown lifecycle
+        shell: pwsh
+        run: .\tests\native-ui-test.ps1
       - name: Generate release checksums
         shell: pwsh
         run: |

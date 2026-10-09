@@ -3,6 +3,7 @@
 #include "Resource.h"
 #include "RecordingQuality.h"
 #include "RegionSelector.h"
+#include "HostMessage.h"
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -39,44 +40,6 @@ std::wstring WebViewDataDirectory() {
     return path;
 }
 
-size_t JsonValueStart(const std::wstring& json, const wchar_t* key) {
-    const auto position = json.find(L"\"" + std::wstring(key) + L"\"");
-    if (position == std::wstring::npos) return position;
-    auto start = json.find(L':', position);
-    if (start == std::wstring::npos) return start;
-    while (++start < json.size() && iswspace(json[start])) {}
-    return start;
-}
-
-std::wstring JsonString(const std::wstring& json, const wchar_t* key) {
-    auto position = JsonValueStart(json, key);
-    if (position >= json.size() || json[position] != L'"') return L"";
-    const auto end = json.find(L'"', position + 1);
-    return end == std::wstring::npos ? L"" : json.substr(position + 1, end - position - 1);
-}
-
-int JsonInteger(const std::wstring& json, const wchar_t* key, int fallback) {
-    const auto position = JsonValueStart(json, key);
-    if (position >= json.size()) return fallback;
-    try {
-        size_t consumed = 0;
-        const int value = std::stoi(json.substr(position), &consumed);
-        auto end = position + consumed;
-        while (end < json.size() && iswspace(json[end])) ++end;
-        // Never silently turn fractional/string-valued input into a valid preset.
-        if (end >= json.size() || (json[end] != L',' && json[end] != L'}')) return fallback;
-        return value;
-    } catch (...) { return fallback; }
-}
-
-bool JsonBoolean(const std::wstring& json, const wchar_t* key, bool fallback) {
-    const auto position = JsonValueStart(json, key);
-    if (position >= json.size()) return fallback;
-    if (json.compare(position, 4, L"true") == 0) return true;
-    if (json.compare(position, 5, L"false") == 0) return false;
-    return fallback;
-}
-
 std::wstring JsonEscape(const std::wstring& value) {
     std::wstring result;
     constexpr wchar_t digits[] = L"0123456789abcdef";
@@ -88,19 +51,6 @@ std::wstring JsonEscape(const std::wstring& value) {
     return result;
 }
 
-RecordingSettings SettingsFromJson(const std::wstring& json, RecordingSettings settings) {
-    settings.height = JsonInteger(json, L"height", settings.height);
-    if (settings.height != 480 && settings.height != 720 && settings.height != 1080) settings.height = 1080;
-    settings.width = settings.height == 480 ? 854 : settings.height == 720 ? 1280 : 1920;
-    settings.fps = JsonInteger(json, L"fps", settings.fps);
-    if (settings.fps != 15 && settings.fps != 30 && settings.fps != 60 && settings.fps != 120) settings.fps = 60;
-    if (settings.height != 1080 && settings.fps == 120) settings.fps = 60;
-    settings.bitrateMbps = NormalizeBitrateMbps(JsonInteger(json, L"bitrateMbps", settings.bitrateMbps));
-    settings.systemAudio = JsonBoolean(json, L"systemAudio", settings.systemAudio);
-    settings.microphone = JsonBoolean(json, L"microphone", settings.microphone);
-    settings.autoCheckUpdates = JsonBoolean(json, L"autoCheckUpdates", settings.autoCheckUpdates);
-    return settings;
-}
 }
 
 bool MainWindow::Create(HINSTANCE instance, int showCommand) {
@@ -475,7 +425,8 @@ void MainWindow::InstallUpdate() {
 }
 
 void MainWindow::ChooseOutputFolder() {
-    if (pending_ != Action::None || snapshotState_ != RecorderState::Idle || folderDialogOpen_) return;
+    if (pending_ != Action::None || snapshotState_ != RecorderState::Idle || folderDialogOpen_ || closeRequested_ ||
+        updateStatus_ == L"installing") return;
     folderDialogOpen_ = true;
     ComPtr<IFileOpenDialog> dialog;
     HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(dialog.ReleaseAndGetAddressOf()));
@@ -493,11 +444,12 @@ void MainWindow::ChooseOutputFolder() {
             PWSTR path = nullptr;
             hr = dialog->GetResult(selected.ReleaseAndGetAddressOf());
             if (SUCCEEDED(hr) && selected) hr = selected->GetDisplayName(SIGDN_FILESYSPATH, &path);
-            if (SUCCEEDED(hr) && path) BeginAction(Action::SetFolder, path);
+            if (SUCCEEDED(hr) && path && !closeRequested_) BeginAction(Action::SetFolder, path);
             CoTaskMemFree(path);
         }
     }
     folderDialogOpen_ = false;
+    if (closeRequested_) { PostMessageW(hwnd_, WM_CLOSE, 0, 0); return; }
     if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
         SetNotice(L"error", L"Windows could not select that folder."); SendState();
     }
@@ -518,10 +470,13 @@ void MainWindow::ChooseSourceRegion() {
     if (ChooseCaptureRegion(hwnd_, display, selected)) { settings_.captureTarget = std::move(selected); selectionInvalid_ = false; }
     folderDialogOpen_ = false; selectingSource_ = false;
     SendState(true);
+    if (closeRequested_) PostMessageW(hwnd_, WM_CLOSE, 0, 0);
 }
 
 void MainWindow::HandleWebMessage(const std::wstring& message) {
-    const auto type = JsonString(message, L"type");
+    HostMessage request;
+    if (!request.Parse(message)) return;
+    const auto type = request.String("type");
     if (type == L"ready") { webReady_ = true; RefreshSources(); SendState(true); return; }
     if (closeRequested_ || updateStatus_ == L"installing") { SendState(true); return; }
     if (type == L"checkUpdates") { BeginUpdate(UpdateAction::Check, true); return; }
@@ -534,7 +489,7 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
     if (pending_ != Action::None || folderDialogOpen_) { SendState(true); return; }
     if (snapshotState_ == RecorderState::Idle && type == L"refreshSources") { RefreshSources(); SendState(true); }
     else if (snapshotState_ == RecorderState::Idle && type == L"sourceMode") {
-        const auto kind = JsonString(message, L"kind");
+        const auto kind = request.String("kind");
         RefreshSources();
         auto display = PrimaryCaptureDisplay();
         if (settings_.captureTarget.kind != CaptureKind::Window) {
@@ -551,7 +506,7 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         sourceSelectedAt_ = GetTickCount();
         RefreshSources(); SendState(true);
     } else if (snapshotState_ == RecorderState::Idle && type == L"selectSource") {
-        const auto id = JsonString(message, L"id");
+        const auto id = request.String("id");
         const bool windowMode = settings_.captureTarget.kind == CaptureKind::Window;
         for (const auto& entry : captureSources_) if (entry.id == id && (entry.target.kind == CaptureKind::Window) == windowMode) {
             if (windowMode || settings_.captureTarget.kind == CaptureKind::Display) settings_.captureTarget = entry.target;
@@ -563,20 +518,20 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         PostMessageW(hwnd_, WM_PICK_REGION, 0, 0);
     } else if (type == L"settings" && snapshotState_ == RecorderState::Idle) {
         const bool wasAutomatic = settings_.autoCheckUpdates;
-        settings_ = SettingsFromJson(message, settings_);
+        settings_ = request.Settings(settings_);
         if (wasAutomatic != settings_.autoCheckUpdates) {
             nextUpdateCheck_ = std::chrono::steady_clock::now();
             if (!settings_.autoCheckUpdates && !manualUpdate_) { downloadWhenAvailable_ = false; updater_.Cancel(); }
         }
         SaveSettings(); SendState();
     } else if (type == L"startup" && snapshotState_ == RecorderState::Idle) {
-        const auto result = startup_.SetEnabled(JsonBoolean(message, L"enabled", startupEnabled_));
+        const auto result = startup_.SetEnabled(request.Boolean("enabled", startupEnabled_));
         startupEnabled_ = startup_.IsEnabled();
         if (!result.ok) SetNotice(L"error", result.message);
         SendState(true);
     } else if (type == L"start" && snapshotState_ == RecorderState::Idle) {
         if (selectionInvalid_) { SetNotice(L"warning", L"The source changed or closed. Select it again before recording."); SendState(true); return; }
-        settings_ = SettingsFromJson(message, settings_); SaveSettings(); BeginAction(Action::Start);
+        settings_ = request.Settings(settings_); SaveSettings(); BeginAction(Action::Start);
     } else if (type == L"pause") {
         if (snapshotState_ == RecorderState::Recording) BeginAction(Action::Pause);
         else if (snapshotState_ == RecorderState::Paused) BeginAction(Action::Resume);
@@ -648,9 +603,14 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         PostMessageW(hwnd_, WM_CLOSE, 0, 0);
         return 0;
     case WM_QUERYENDSESSION:
-        return pending_ == Action::None && snapshotState_ == RecorderState::Idle;
+        return pending_ == Action::None && snapshotState_ == RecorderState::Idle && !folderDialogOpen_;
     case WM_CLOSE:
         updater_.Cancel();
+        if (folderDialogOpen_) {
+            closeRequested_ = true;
+            SetNotice(L"info", L"Close the folder or area selector to finish closing CamCord."); SendState();
+            return 0;
+        }
         if (pending_ != Action::None || snapshotState_ != RecorderState::Idle) {
             closeRequested_ = true;
             SetNotice(L"info", L"CamCord will close after your recording finishes saving.");

@@ -2,6 +2,7 @@
 #include "../src/SettingsManager.h"
 #include "../src/OutputManager.h"
 #include "../src/RecordingQuality.h"
+#include "../src/HostMessage.h"
 #include <windows.h>
 #include <aclapi.h>
 #include <sddl.h>
@@ -64,6 +65,25 @@ int wmain(int argc, wchar_t** argv) {
     if (fs::exists(root)) { std::cerr << "Refusing to reuse an existing test folder. Supply a fresh path.\n"; return 2; }
     try {
         fs::create_directories(root);
+        HostMessage message;
+        for (const auto* invalid : { L"{\"type\":\"start\",\"settings\":{\"microphone\":trueOops}}",
+            L"{\"wrapper\":{\"type\":\"start\"}}", L"[]", L"{\"type\":5}", L"{\"type\":\"start\"} trailing" })
+            Check(!message.Parse(invalid), "Malformed or nested command was accepted");
+        Check(message.Parse(LR"({"type":"settings","height":480,"settings":{"height":720,"fps":120,"bitrateMbps":32,"microphone":true,"systemAudio":false}})"), "Valid settings command rejected");
+        auto parsed = message.Settings(RecordingSettings{});
+        Check(parsed.height == 720 && parsed.width == 1280 && parsed.fps == 60 && parsed.bitrateMbps == 32 && parsed.microphone && !parsed.systemAudio,
+            "Explicit settings object was not applied correctly");
+        for (const auto* invalidValues : { LR"({"type":"settings","settings":{"fps":30.5,"bitrateMbps":"100","microphone":"true"}})",
+            LR"({"type":"settings","settings":{"fps":18446744073709551615,"bitrateMbps":4294967312,"microphone":null}})" }) {
+            Check(message.Parse(invalidValues), "JSON with invalid field types should parse safely");
+            auto preserved = message.Settings(parsed);
+            Check(preserved.fps == parsed.fps && preserved.bitrateMbps == parsed.bitrateMbps && preserved.microphone == parsed.microphone,
+                "Invalid/overflow fields changed valid settings");
+        }
+        Check(message.Parse(LR"({"type":"selectSource","id":"quoted\"\u0631\u06cc","nested":{"enabled":true},"enabled":false})") &&
+            message.String("id") == L"quoted\"\u0631\u06cc" && !message.Boolean("enabled", true), "Escaped Unicode strings or root booleans were misread");
+        Check(!message.Parse(std::wstring(4097, L'a')), "Oversized host message was accepted");
+        std::cout << "PASS: strict host JSON, explicit settings object, nested commands, escaped Unicode, overflow and malformed field guards\n";
         const auto settingsPath = root / L"settings.ini";
         SettingsManager settings(settingsPath.wstring());
         const auto defaults = settings.Load();

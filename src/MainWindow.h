@@ -15,6 +15,7 @@ public:
     bool Create(HINSTANCE instance, int showCommand);
     int Run();
 private:
+    friend struct MainWindowTestAccess;
     enum class Action { None, Initialize, Start, Pause, Resume, Stop, SetFolder };
     struct ActionResult { OperationResult result; RecordingSettings settings; };
     enum class UpdateAction { None, Check, Download, Verify };

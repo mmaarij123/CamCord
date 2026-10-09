@@ -11,7 +11,7 @@ $sources = @('tests\settings_tests.cpp', 'src\SettingsManager.cpp', 'src\OutputM
 $quotedSources = ($sources | ForEach-Object { '"' + (Join-Path $projectRoot $_) + '"' }) -join ' '
 Push-Location $build
 try {
-    $command = '"' + $vcvars + '" >nul && cl.exe /nologo /EHsc /std:c++17 /W4 /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN ' + $quotedSources + ' /Fe:settings_tests.exe /link ole32.lib shell32.lib uuid.lib advapi32.lib'
+    $command = '"' + $vcvars + '" >nul && cl.exe /nologo /EHsc /std:c++17 /W4 /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I"' + (Join-Path $projectRoot 'third_party\json') + '" ' + $quotedSources + ' /Fe:settings_tests.exe /link ole32.lib shell32.lib uuid.lib advapi32.lib'
     & $env:ComSpec /d /s /c $command
     if ($LASTEXITCODE -ne 0) { throw 'Settings/output integration test compile failed.' }
     $artifacts = Join-Path $build ('run-' + [guid]::NewGuid().ToString('N'))

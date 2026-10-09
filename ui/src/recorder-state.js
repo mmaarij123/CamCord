@@ -45,6 +45,20 @@ export function parseStateMessage(data) {
   try {
     const message = typeof data === 'string' ? JSON.parse(data) : data;
     if (!message || message.type !== 'state' || !Object.hasOwn(STATE_LABELS, message.state)) return null;
+    const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+    if (message.sources !== undefined && (!Array.isArray(message.sources) || !message.sources.every((source) =>
+      object(source) && ['display', 'window'].includes(source.kind) && typeof source.id === 'string' && typeof source.label === 'string'))) return null;
+    if (message.captureSource !== undefined && (!object(message.captureSource) ||
+      (message.captureSource.kind !== undefined && !['display', 'window', 'region'].includes(message.captureSource.kind)) ||
+      (message.captureSource.label !== undefined && typeof message.captureSource.label !== 'string') ||
+      (message.captureSource.ready !== undefined && typeof message.captureSource.ready !== 'boolean'))) return null;
+    if (message.settings !== undefined && (!object(message.settings) ||
+      ['systemAudio', 'microphone', 'autoCheckUpdates'].some((key) => message.settings[key] !== undefined && typeof message.settings[key] !== 'boolean'))) return null;
+    if (message.update !== undefined && (!object(message.update) ||
+      ['message', 'version', 'status'].some((key) => message.update[key] !== undefined && typeof message.update[key] !== 'string'))) return null;
+    if (message.notice !== undefined && (!object(message.notice) || typeof message.notice.text !== 'string' ||
+      !['success', 'info', 'warning', 'error'].includes(message.notice.severity))) return null;
+    if (['outputFolder', 'lastOutput', 'encoder', 'appVersion'].some((key) => message[key] !== undefined && typeof message[key] !== 'string')) return null;
     return message;
   } catch {
     return null;
@@ -63,5 +77,5 @@ export function mergeState(previous, message) {
 }
 
 export function canInstallUpdate(app) {
-  return app.state === 'idle' && app.update.status === 'ready';
+  return app.state === 'idle' && !app.selectingSource && app.update.status === 'ready';
 }

@@ -98,15 +98,33 @@ bool ChildProcess::SendQuitAndWait(DWORD timeoutMs) {
 }
 
 DWORD ChildProcess::Wait(DWORD timeoutMs) { return pi_.hProcess ? WaitForSingleObject(pi_.hProcess, timeoutMs) : WAIT_FAILED; }
-bool ChildProcess::WriteInput(const void* bytes, DWORD length) {
+bool ChildProcess::WriteInput(const void* bytes, DWORD length, const std::atomic<bool>* cancelled) {
     const auto data = static_cast<const BYTE*>(bytes);
     DWORD total = 0;
     while (stdinWrite_ && total < length) {
+        if (cancelled && cancelled->load()) return false;
         DWORD written = 0;
         if (!WriteFile(stdinWrite_, data + total, length - total, &written, nullptr) || !written) return false;
         total += written;
     }
     return total == length;
+}
+
+bool JoinInputWriter(std::thread& writer, std::atomic<bool>& cancelled, DWORD timeoutMs) {
+    if (!writer.joinable()) return true;
+    const HANDLE thread = writer.native_handle();
+    const bool clean = WaitForSingleObject(thread, timeoutMs) == WAIT_OBJECT_0;
+    if (!clean) {
+        cancelled = true;
+        // Retry handles the gap between the cancellation check and WriteFile.
+        // Never close/reuse the pipe handle while the writer still owns it.
+        while (WaitForSingleObject(thread, 0) == WAIT_TIMEOUT) {
+            CancelSynchronousIo(thread);
+            WaitForSingleObject(thread, 10);
+        }
+    }
+    writer.join();
+    return clean;
 }
 
 bool ChildProcess::EndInputAndWait(DWORD timeoutMs) {
