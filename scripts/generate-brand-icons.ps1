@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$sourcePath = Join-Path $projectRoot 'assets\branding\camcord-logo.png'
+$sourcePath = Join-Path $projectRoot 'assets\branding\camcord-logo-taskbar.png'
 $publicDir = Join-Path $projectRoot 'ui\public'
 New-Item -ItemType Directory -Force -Path $publicDir | Out-Null
 $sizes = @(16, 20, 24, 32, 48, 64, 128, 256)

@@ -46,6 +46,9 @@ jobs:
       - name: Test settings and output folders
         shell: pwsh
         run: .\tests\settings-test.ps1
+      - name: Test taskbar and installer icon visibility
+        shell: pwsh
+        run: .\tests\branding-test.ps1 -CheckBuild
       - name: Test recording finalization and recovery
         shell: pwsh
         run: .\tests\pipeline-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe
