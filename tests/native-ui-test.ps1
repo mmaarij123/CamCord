@@ -7,7 +7,7 @@ $vcvars = Join-Path $vsRoot 'VC\Auxiliary\Build\vcvars64.bat'
 $build = Join-Path $projectRoot 'obj\native-ui-tests'
 New-Item -ItemType Directory -Path $build -Force | Out-Null
 $sources = @('tests\native_ui_tests.cpp','src\MainWindow.cpp','src\RecordingManager.cpp','src\AudioCaptureEngine.cpp',
-    'src\CaptureEngine.cpp','src\CaptureSources.cpp','src\RegionSelector.cpp','src\Process.cpp','src\OutputManager.cpp',
+    'src\CaptureEngine.cpp','src\CaptureSources.cpp','src\Process.cpp','src\OutputManager.cpp',
     'src\HardwareEncoderDetector.cpp','src\SettingsManager.cpp','src\StartupManager.cpp','src\UpdateManager.cpp')
 $quotedSources = ($sources | ForEach-Object { '"' + (Join-Path $projectRoot $_) + '"' }) -join ' '
 Push-Location $build

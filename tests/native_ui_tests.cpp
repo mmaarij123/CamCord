@@ -10,7 +10,7 @@ struct MainWindowTestAccess {
         type.hInstance = GetModuleHandleW(nullptr);
         type.lpszClassName = L"CamCordIsolatedLifecycleTest";
         Check(RegisterClassW(&type) != 0, "Fixture registration failed");
-        for (const bool region : {false, true}) {
+        {
             MainWindow app;
             // Bypass production WM_CREATE: no WebView, settings file, update
             // request or capture is initialized in these isolated fixtures.
@@ -20,11 +20,24 @@ struct MainWindowTestAccess {
             app.hwnd_ = fixture;
             SetWindowLongPtrW(fixture, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&app));
             SetWindowLongPtrW(fixture, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(MainWindow::WindowProc));
-            app.folderDialogOpen_ = true; app.selectingSource_ = region;
+            app.settings_.captureTarget.kind = CaptureKind::Window;
+            app.settings_.captureTarget.handle = 1234;
+            app.HandleWebMessage(LR"({"type":"sourceMode","kind":"region"})");
+            app.HandleWebMessage(LR"({"type":"pickRegion"})");
+            Check(app.settings_.captureTarget.kind == CaptureKind::Window && app.settings_.captureTarget.handle == 1234 &&
+                !app.folderDialogOpen_, "Legacy area command changed the selected source or opened a picker");
+            MSG picker{};
+            Check(!PeekMessageW(&picker, fixture, WM_APP + 4, WM_APP + 4, PM_REMOVE), "Removed area picker was queued");
+            app.HandleWebMessage(LR"({"type":"sourceMode","kind":"display"})");
+            Check(app.settings_.captureTarget.kind == CaptureKind::Display, "Screen mode switching failed");
+            app.HandleWebMessage(LR"({"type":"sourceMode","kind":"window"})");
+            Check(app.settings_.captureTarget.kind == CaptureKind::Window && app.settings_.captureTarget.handle == 0,
+                "Window mode must require explicit source selection");
+            app.folderDialogOpen_ = true;
             Check(!SendMessageW(fixture, WM_QUERYENDSESSION, 0, 0), "Shutdown accepted during modal selection");
             SendMessageW(fixture, WM_CLOSE, 0, 0);
             Check(IsWindow(fixture) && app.closeRequested_, "Close destroyed the owner during a modal selection");
-            app.folderDialogOpen_ = false; app.selectingSource_ = false;
+            app.folderDialogOpen_ = false;
             // A queued folder request must be ignored once close/update starts.
             app.ChooseOutputFolder();
             Check(!app.folderDialogOpen_, "Queued folder picker started after close request");
@@ -36,7 +49,7 @@ struct MainWindowTestAccess {
             Check(!IsWindow(fixture), "Close did not complete after modal selection ended");
             MSG quit{}; PeekMessageW(&quit, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE);
         }
-        std::cout << "PASS: folder/area modal owner survives close; shutdown blocked; close completes; queued picker guarded during close/install\n";
+        std::cout << "PASS: removed area commands ignored; Screen/Window modes work; folder modal close/shutdown/install guards preserved\n";
     }
 };
 

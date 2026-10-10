@@ -31,7 +31,6 @@ private:
     void SendState(bool force = false);
     void ChooseOutputFolder();
     void RefreshSources();
-    void ChooseSourceRegion();
     void SetNotice(std::wstring severity, std::wstring text);
     void ReportFatal(std::wstring text);
     void SaveSettings();
@@ -58,7 +57,7 @@ private:
     bool folderDialogOpen_ = false;
     bool captureExcluded_ = false;
     bool fatalCloseRequested_ = false;
-    bool selectingSource_ = false, sourceLost_ = false, selectionInvalid_ = false;
+    bool sourceLost_ = false, selectionInvalid_ = false;
     HWINEVENTHOOK sourceEvents_ = nullptr;
     DWORD sourceSelectedAt_ = 0;
     std::vector<CaptureSourceEntry> captureSources_;

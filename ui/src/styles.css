@@ -107,7 +107,6 @@ button:focus-visible, .MuiButtonBase-root:focus-visible { outline: 2px solid #f2
 .source-picker .MuiSelect-select { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; font-size: 11px; }
 .source-option-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .source-menu .MuiMenuItem-root { justify-content: flex-start; }
-.source-settings .select-area-button { margin-top: 10px; min-height: 36px; font-size: 11px; border-color: #c7d3e529; color: #dfe4ec; }
 .source-description { margin-bottom: 0; }
 .source-required { color: var(--warning); margin: 9px 0 0; font-size: 11px; line-height: 1.5; }
 .source-audio-hint { margin-top: 7px; }

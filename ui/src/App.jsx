@@ -43,8 +43,7 @@ export default function App() {
   const busy = !idle && !recording && !paused;
   const installingUpdate = app.update.status === 'installing';
   const updateBusy = ['checking', 'downloading', 'installing'].includes(app.update.status);
-  const selectingSource = sourcePending || app.selectingSource;
-  const settingsDisabled = !idle || !connected || installingUpdate || selectingSource;
+  const settingsDisabled = !idle || !connected || installingUpdate || sourcePending;
   const elapsed = formatElapsed(app.elapsedSeconds);
   const frameRates = app.settings.height === 1080 ? HIGH_FRAME_RATES : FRAME_RATES;
   const width = app.settings.height === 480 ? 854 : app.settings.height === 720 ? 1280 : 1920;
@@ -101,7 +100,7 @@ export default function App() {
 
   function updateApp(type) {
     if (!connected || updateBusy) return;
-    if (type === 'installUpdate' && !canInstallUpdate({ ...app, state: currentState, selectingSource })) return;
+    if (type === 'installUpdate' && !canInstallUpdate({ ...app, state: currentState }, sourcePending)) return;
     if (!sendToHost({ type })) {
       setNotice({ severity: 'info', text: 'Updates are available in the CamCord desktop app.', key: Date.now() });
     }
@@ -146,8 +145,8 @@ export default function App() {
           ready: action.kind === 'display', id: action.kind === 'window' ? '' : 'preview-primary', label: action.kind === 'display' ? 'Primary display' : 'Choose a source' } }));
       } else if (action.type === 'selectSource') {
         const entry = app.sources.find((source) => source.id === action.id);
-        if (entry) setApp((previous) => ({ ...previous, captureSource: { ...previous.captureSource, id: entry.id, label: entry.label, ready: previous.captureSource.kind !== 'region' } }));
-      } else setNotice({ severity: 'info', text: 'Use the CamCord desktop app to refresh sources or select an area.', key: Date.now() });
+        if (entry) setApp((previous) => ({ ...previous, captureSource: { ...previous.captureSource, id: entry.id, label: entry.label, ready: true } }));
+      } else setNotice({ severity: 'info', text: 'Use the CamCord desktop app to refresh capture sources.', key: Date.now() });
     }
   }
 
@@ -158,7 +157,7 @@ export default function App() {
   }
 
   const readoutNote = !connected ? 'Connecting to the recorder…'
-    : selectingSource ? 'Select your capture area. Press Esc to cancel.'
+    : sourcePending ? 'Updating capture sources…'
     : currentState === 'starting' ? 'Checking your selected source, audio, and encoder.'
       : currentState === 'pausing' ? 'Finishing the current recording segment.'
         : currentState === 'resuming' ? 'Preparing your next recording segment.'
@@ -167,7 +166,6 @@ export default function App() {
               : recording ? (app.encoder ? `Encoding with ${app.encoder}` : `Capturing ${app.captureSource.label}`)
                 : !app.captureSource.ready ? 'Choose an available capture source before recording.'
                   : app.captureSource.kind === 'window' ? 'Only the selected window will be recorded. Keep it restored.'
-                    : app.captureSource.kind === 'region' ? 'Only your selected area will be recorded.'
                 : app.captureExcluded ? 'Your cursor and CamCord controls stay out of the final video.'
                   : 'Your cursor is hidden. Minimize CamCord to keep its controls out of the video.';
 
@@ -228,7 +226,7 @@ export default function App() {
         <aside className="settings-panel" aria-label="Capture setup">
           <div className="settings-heading"><div><span>Capture setup</span><h2>Recording setup</h2></div><TuneRounded /></div>
           <Suspense fallback={<div className="source-settings source-loading" role="status">Loading capture sources…</div>}>
-            <CaptureSourceControl source={app.captureSource} sources={app.sources} disabled={settingsDisabled} selecting={selectingSource} onAction={changeSource} />
+            <CaptureSourceControl source={app.captureSource} sources={app.sources} disabled={settingsDisabled} onAction={changeSource} />
           </Suspense>
           <div className="settings-group">
             <span className="field-label" id="resolution-label">Resolution</span>
@@ -272,7 +270,7 @@ export default function App() {
             <div className="update-actions">
               <Button variant="outlined" size="small" disabled={!connected || updateBusy} onClick={() => updateApp('checkUpdates')} startIcon={app.update.status === 'checking' ? <CircularProgress size={12} color="inherit" /> : null}>Check now</Button>
               {app.update.status === 'available' ? <Button variant="contained" size="small" disabled={!connected || updateBusy} onClick={() => updateApp('downloadUpdate')}>Download update</Button> : null}
-              {app.update.status === 'ready' ? <Tooltip title={!idle ? 'Stop and save your recording first' : selectingSource ? 'Finish selecting your capture area first' : 'CamCord will restart after installation'}><span><Button variant="contained" size="small" disabled={!connected || !canInstallUpdate({ ...app, state: currentState, selectingSource })} onClick={() => updateApp('installUpdate')}>Install &amp; restart</Button></span></Tooltip> : null}
+              {app.update.status === 'ready' ? <Tooltip title={!idle ? 'Stop and save your recording first' : sourcePending ? 'Finish changing your capture source first' : 'CamCord will restart after installation'}><span><Button variant="contained" size="small" disabled={!connected || !canInstallUpdate({ ...app, state: currentState }, sourcePending)} onClick={() => updateApp('installUpdate')}>Install &amp; restart</Button></span></Tooltip> : null}
             </div>
             <span className="field-hint">Updates install when you choose. Stop and save your recording first.</span>
           </section>

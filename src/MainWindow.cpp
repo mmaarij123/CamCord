@@ -2,7 +2,6 @@
 #include "AppVersion.h"
 #include "Resource.h"
 #include "RecordingQuality.h"
-#include "RegionSelector.h"
 #include "HostMessage.h"
 #include <dwmapi.h>
 #include <shellapi.h>
@@ -21,7 +20,6 @@ constexpr UINT_PTR TIMER_RECORDING = 1;
 constexpr UINT WM_CHOOSE_FOLDER = WM_APP + 1;
 constexpr UINT WM_FATAL_ERROR = WM_APP + 2;
 constexpr UINT WM_INSTALL_UPDATE = WM_APP + 3;
-constexpr UINT WM_PICK_REGION = WM_APP + 4;
 constexpr UINT WM_SOURCE_DESTROYED = WM_APP + 5;
 HWND sourceEventWindow = nullptr;
 constexpr wchar_t APP_URL[] = L"https://app.camcord/index.html";
@@ -232,7 +230,7 @@ void MainWindow::SendState(bool force) {
     const auto lastName = lastOutput_.empty() ? L"" : std::filesystem::path(lastOutput_).filename().wstring();
     auto target = settings_.captureTarget;
     const bool sourceReady = !selectionInvalid_ && ResolveCaptureTarget(target).ok;
-    const auto kindName = [](CaptureKind kind) { return kind == CaptureKind::Window ? L"window" : kind == CaptureKind::Region ? L"region" : L"display"; };
+    const auto kindName = [](CaptureKind kind) { return kind == CaptureKind::Window ? L"window" : L"display"; };
     std::wostringstream json;
     json << L"{\"type\":\"state\",\"state\":\"" << state << L"\",\"elapsedSeconds\":" << elapsedSeconds_
         << L",\"settings\":{\"height\":" << settings_.height << L",\"fps\":" << settings_.fps
@@ -248,12 +246,11 @@ void MainWindow::SendState(bool force) {
         << L",\"update\":{\"status\":\"" << JsonEscape(updateStatus_) << L"\",\"message\":\"" << JsonEscape(updateMessage_)
         << L"\",\"version\":\"" << JsonEscape(std::wstring(updateInfo_.version.begin(), updateInfo_.version.end()))
         << L"\",\"progress\":" << updater_.Progress() << L"}";
-    json << L",\"selectingSource\":" << (selectingSource_ ? L"true" : L"false")
-        << L",\"captureSource\":{\"kind\":\"" << kindName(target.kind) << L"\",\"id\":\""
+    json << L",\"captureSource\":{\"kind\":\"" << kindName(target.kind) << L"\",\"id\":\""
         << (target.handle ? CaptureSourceId(target) : L"") << L"\",\"label\":\"" << JsonEscape(target.label)
         << L"\",\"ready\":" << (sourceReady ? L"true" : L"false")
-        << L",\"width\":" << (target.kind == CaptureKind::Region ? target.regionWidth : target.sourceWidth)
-        << L",\"height\":" << (target.kind == CaptureKind::Region ? target.regionHeight : target.sourceHeight) << L"},\"sources\":[";
+        << L",\"width\":" << target.sourceWidth
+        << L",\"height\":" << target.sourceHeight << L"},\"sources\":[";
     bool firstSource = true;
     for (const auto& entry : captureSources_) {
         if (!firstSource) json << L",";
@@ -459,20 +456,6 @@ void MainWindow::RefreshSources() {
     captureSources_ = EnumerateCaptureSources();
 }
 
-void MainWindow::ChooseSourceRegion() {
-    if (pending_ != Action::None || snapshotState_ != RecorderState::Idle || folderDialogOpen_ || closeRequested_ ||
-        updateStatus_ == L"installing" || settings_.captureTarget.kind != CaptureKind::Region) { SendState(true); return; }
-    auto display = settings_.captureTarget; display.kind = CaptureKind::Display;
-    const auto available = ResolveCaptureTarget(display);
-    if (!available.ok) { SetNotice(L"error", available.message); SendState(true); return; }
-    folderDialogOpen_ = true; selectingSource_ = true; SendState(true);
-    CaptureTarget selected;
-    if (ChooseCaptureRegion(hwnd_, display, selected)) { settings_.captureTarget = std::move(selected); selectionInvalid_ = false; }
-    folderDialogOpen_ = false; selectingSource_ = false;
-    SendState(true);
-    if (closeRequested_) PostMessageW(hwnd_, WM_CLOSE, 0, 0);
-}
-
 void MainWindow::HandleWebMessage(const std::wstring& message) {
     HostMessage request;
     if (!request.Parse(message)) return;
@@ -490,6 +473,7 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
     if (snapshotState_ == RecorderState::Idle && type == L"refreshSources") { RefreshSources(); SendState(true); }
     else if (snapshotState_ == RecorderState::Idle && type == L"sourceMode") {
         const auto kind = request.String("kind");
+        if (kind != L"display" && kind != L"window") { SendState(true); return; }
         RefreshSources();
         auto display = PrimaryCaptureDisplay();
         if (settings_.captureTarget.kind != CaptureKind::Window) {
@@ -498,10 +482,6 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         }
         if (kind == L"display") settings_.captureTarget = display;
         else if (kind == L"window") { settings_.captureTarget = {}; settings_.captureTarget.kind = CaptureKind::Window; settings_.captureTarget.label = L"Choose a window"; }
-        else if (kind == L"region") {
-            settings_.captureTarget = display; settings_.captureTarget.kind = CaptureKind::Region;
-            settings_.captureTarget.label = L"Select an area";
-        } else { SendState(true); return; }
         selectionInvalid_ = false;
         sourceSelectedAt_ = GetTickCount();
         RefreshSources(); SendState(true);
@@ -509,13 +489,10 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         const auto id = request.String("id");
         const bool windowMode = settings_.captureTarget.kind == CaptureKind::Window;
         for (const auto& entry : captureSources_) if (entry.id == id && (entry.target.kind == CaptureKind::Window) == windowMode) {
-            if (windowMode || settings_.captureTarget.kind == CaptureKind::Display) settings_.captureTarget = entry.target;
-            else { settings_.captureTarget = entry.target; settings_.captureTarget.kind = CaptureKind::Region; settings_.captureTarget.label = L"Select an area"; }
+            settings_.captureTarget = entry.target;
             selectionInvalid_ = false; sourceSelectedAt_ = GetTickCount(); SendState(true); return;
         }
         SetNotice(L"warning", L"That source is no longer in the list. Refresh and choose it again."); SendState(true);
-    } else if (snapshotState_ == RecorderState::Idle && type == L"pickRegion" && settings_.captureTarget.kind == CaptureKind::Region) {
-        PostMessageW(hwnd_, WM_PICK_REGION, 0, 0);
     } else if (type == L"settings" && snapshotState_ == RecorderState::Idle) {
         const bool wasAutomatic = settings_.autoCheckUpdates;
         settings_ = request.Settings(settings_);
@@ -586,7 +563,6 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         return 0;
     case WM_CHOOSE_FOLDER: ChooseOutputFolder(); return 0;
-    case WM_PICK_REGION: ChooseSourceRegion(); return 0;
     case WM_SOURCE_DESTROYED:
         if (settings_.captureTarget.kind == CaptureKind::Window && settings_.captureTarget.handle == static_cast<unsigned long long>(wParam) &&
             static_cast<LONG>(static_cast<DWORD>(lParam) - sourceSelectedAt_) >= 0) {
@@ -608,7 +584,7 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         updater_.Cancel();
         if (folderDialogOpen_) {
             closeRequested_ = true;
-            SetNotice(L"info", L"Close the folder or area selector to finish closing CamCord."); SendState();
+            SetNotice(L"info", L"Close the folder selector to finish closing CamCord."); SendState();
             return 0;
         }
         if (pending_ != Action::None || snapshotState_ != RecorderState::Idle) {

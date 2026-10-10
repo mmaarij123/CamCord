@@ -12,7 +12,6 @@ export const INITIAL_STATE = {
   outputFolder: 'Videos / CamCord Captures',
   lastOutput: '',
   captureExcluded: false,
-  selectingSource: false,
   captureSource: { kind: 'display', id: 'preview-primary', label: 'Primary display', ready: true, width: 1920, height: 1080 },
   sources: [{ kind: 'display', id: 'preview-primary', label: 'Primary display · 1920 × 1080', primary: true }],
 };
@@ -49,7 +48,7 @@ export function parseStateMessage(data) {
     if (message.sources !== undefined && (!Array.isArray(message.sources) || !message.sources.every((source) =>
       object(source) && ['display', 'window'].includes(source.kind) && typeof source.id === 'string' && typeof source.label === 'string'))) return null;
     if (message.captureSource !== undefined && (!object(message.captureSource) ||
-      (message.captureSource.kind !== undefined && !['display', 'window', 'region'].includes(message.captureSource.kind)) ||
+      (message.captureSource.kind !== undefined && !['display', 'window'].includes(message.captureSource.kind)) ||
       (message.captureSource.label !== undefined && typeof message.captureSource.label !== 'string') ||
       (message.captureSource.ready !== undefined && typeof message.captureSource.ready !== 'boolean'))) return null;
     if (message.settings !== undefined && (!object(message.settings) ||
@@ -76,6 +75,6 @@ export function mergeState(previous, message) {
   };
 }
 
-export function canInstallUpdate(app) {
-  return app.state === 'idle' && !app.selectingSource && app.update.status === 'ready';
+export function canInstallUpdate(app, sourcePending = false) {
+  return app.state === 'idle' && !sourcePending && app.update.status === 'ready';
 }

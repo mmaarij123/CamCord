@@ -4,7 +4,7 @@ A lightweight screen recorder for every capture you imagine. Available on Window
 
 ## Features
 
-- **Capture source:** record a chosen display, an individual window, or a mouse-selected area within a display. Window capture works behind other windows.
+- **Capture source:** record a chosen display or an individual window. Window capture works behind other windows.
 - **Recording quality:** choose 480p, 720p or 1080p.
 - **Frame rates:** record at 15, 30 or 60 FPS, with 120 FPS at 1080p on supported hardware.
 - **Video bitrate:** Auto, or choose 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 50, 64, 75 or 100 Mbps. See estimated storage use; 32 Mbps and higher show a storage warning. Your choice is remembered.

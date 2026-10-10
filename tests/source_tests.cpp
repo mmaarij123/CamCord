@@ -1,10 +1,8 @@
 #include "../src/CaptureSources.h"
-#include "../src/RegionSelector.h"
 #include "../src/CaptureEngine.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <limits>
 #include <stdexcept>
 #include <future>
 
@@ -50,23 +48,11 @@ int wmain(int argc, wchar_t** argv) {
         fs::create_directories(root);
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         CaptureTarget display; display.handle = 42; display.sourceWidth = 1920; display.sourceHeight = 1080;
-        CaptureTarget region;
-        Check(CaptureRegionFromDrag(display, 900, 700, 100, 100, region) && region.x == 100 && region.y == 100 &&
-            region.regionWidth == 800 && region.regionHeight == 600, "Reverse drag geometry is incorrect");
-        Check(CaptureRegionFromDrag(display, -200, -100, 2100, 1200, region) && region.x == 0 && region.y == 0 &&
-            region.regionWidth == 1920 && region.regionHeight == 1080, "Drag escaped the selected display");
-        region.label = L"Keep existing selection";
-        const auto previous = region;
-        Check(!CaptureRegionFromDrag(display, 0, 0, 4, 4, region) && region.label == previous.label &&
-            region.regionWidth == previous.regionWidth, "Invalid drag changed previous selection");
-        Check(!ValidCaptureRegion(1920,1080,-1,0,640,360) && !ValidCaptureRegion(1920,1080,1900,0,640,360) &&
-            !ValidCaptureRegion(1920,1080,0,0,std::numeric_limits<int>::max(),360), "Invalid/overflow crop accepted");
-        region = display; region.kind = CaptureKind::Region; region.x = 100; region.y = 200; region.regionWidth = 640; region.regionHeight = 360;
-        const auto crop = CaptureInputFilter(region, 60);
-        Check(crop.find(L"hmonitor=42") != std::wstring::npos && crop.find(L"crop_right=1180") != std::wstring::npos &&
-            crop.find(L"crop_bottom=520") != std::wstring::npos, "Selected area does not use monitor-local crop coordinates");
         Check(CaptureInputFilter(display, 30).find(L"hmonitor=42") != std::wstring::npos, "Display selection ignored explicit monitor handle");
-        std::cout << "PASS: forward/reverse/outside drag bounds, minimum size, overflow guard, monitor-relative crop\n";
+        Check(CaptureInputFilter(display, 30).find(L"crop_") == std::wstring::npos, "Display capture still applies an area crop");
+        auto removed = display; removed.kind = static_cast<CaptureKind>(2);
+        Check(!ResolveCaptureTarget(removed).ok, "Removed/unsupported capture kind was accepted");
+        std::cout << "PASS: selected display handle, full-display capture, removed capture kind rejected\n";
 
         WNDCLASSEXW type{sizeof(type)}; type.lpfnWndProc = FixtureProc; type.hInstance = GetModuleHandleW(nullptr); type.lpszClassName = L"CamCordSyntheticSourceTest";
         Check(RegisterClassExW(&type) != 0, "Could not register synthetic fixture");
@@ -100,16 +86,6 @@ int wmain(int argc, wchar_t** argv) {
             ShowWindow(fixture, SW_HIDE);
             std::cout << "PASS: full producer/bridge/stalled-encoder stop returns within deadline and reports failure\n";
         }
-
-        // Independently validate the crop with synthetic media, never desktop pixels.
-        const auto synthetic = root / L"crop.mp4";
-        const auto filter = L"crop=640:360:100:200,scale=854:480:force_original_aspect_ratio=decrease,pad=854:480:(ow-iw)/2:(oh-ih)/2,format=yuv420p";
-        Check(ChildProcess::Run(argv[1], L"-y -hide_banner -loglevel error -f lavfi -i testsrc2=size=1920x1080:rate=15 -t 0.3 -vf "
-            + QuoteArg(filter) + L" -c:v libx264 -preset ultrafast " + QuoteArg(synthetic.wstring()), (root / L"crop.log").wstring()) == 0,
-            "Region crop/scale did not encode");
-        Check(ChildProcess::Run(argv[1], L"-hide_banner -loglevel error -xerror -i " + QuoteArg(synthetic.wstring()) + L" -f null NUL",
-            (root / L"crop-decode.log").wstring()) == 0, "Region output is not decodable");
-        std::cout << "PASS: synthetic selected-area crop/scale encodes and decodes\n";
 
         if (live) {
             ShowWindow(fixture, SW_SHOWNOACTIVATE); UpdateWindow(fixture); Pump(250);

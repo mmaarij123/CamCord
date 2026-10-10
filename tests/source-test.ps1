@@ -9,7 +9,7 @@ if (-not $vsRoot) { throw 'Visual Studio C++ tools are required.' }
 $vcvars = Join-Path $vsRoot 'VC\Auxiliary\Build\vcvars64.bat'
 $build = Join-Path $projectRoot 'obj\source-tests'
 New-Item -ItemType Directory -Path $build -Force | Out-Null
-$sources = @('tests\source_tests.cpp','src\CaptureSources.cpp','src\RegionSelector.cpp','src\CaptureEngine.cpp','src\Process.cpp')
+$sources = @('tests\source_tests.cpp','src\CaptureSources.cpp','src\CaptureEngine.cpp','src\Process.cpp')
 $quotedSources = ($sources | ForEach-Object { '"' + (Join-Path $projectRoot $_) + '"' }) -join ' '
 Push-Location $build
 try {

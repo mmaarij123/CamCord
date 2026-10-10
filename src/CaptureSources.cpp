@@ -69,20 +69,12 @@ CaptureTarget PrimaryCaptureDisplay() {
     return state.sources.empty() ? CaptureTarget{} : state.sources.front().target;
 }
 
-bool ValidCaptureRegion(int screenWidth, int screenHeight, int x, int y, int width, int height) {
-    return screenWidth > 0 && screenHeight > 0 && x >= 0 && y >= 0 && width >= 16 && height >= 16 &&
-        x <= screenWidth && y <= screenHeight && width <= screenWidth - x && height <= screenHeight - y;
-}
-
 bool CaptureSourceExists(const CaptureTarget& target) {
-    if (!target.handle) return false;
+    if (!target.handle || (target.kind != CaptureKind::Display && target.kind != CaptureKind::Window)) return false;
     if (target.kind != CaptureKind::Window) {
         MONITORINFO info{ sizeof(info) };
         if (!GetMonitorInfoW(reinterpret_cast<HMONITOR>(target.handle), &info)) return false;
-        return target.kind != CaptureKind::Region ||
-            (target.sourceWidth == info.rcMonitor.right - info.rcMonitor.left &&
-             target.sourceHeight == info.rcMonitor.bottom - info.rcMonitor.top &&
-             ValidCaptureRegion(target.sourceWidth, target.sourceHeight, target.x, target.y, target.regionWidth, target.regionHeight));
+        return true;
     }
     const HWND window = reinterpret_cast<HWND>(target.handle);
     DWORD process = 0;
@@ -94,7 +86,7 @@ bool CaptureSourceExists(const CaptureTarget& target) {
 
 OperationResult ResolveCaptureTarget(CaptureTarget& target) {
     if (target.kind == CaptureKind::Display && !target.handle) target = PrimaryCaptureDisplay();
-    if (!CaptureSourceExists(target)) return OperationResult::Failure(L"The selected source is unavailable. Choose the display, window or area again.");
+    if (!CaptureSourceExists(target)) return OperationResult::Failure(L"The selected source is unavailable. Choose the display or window again.");
     if (target.kind == CaptureKind::Window) {
         const HWND window = reinterpret_cast<HWND>(target.handle);
         if (IsIconic(window) || !IsWindowVisible(window)) return OperationResult::Failure(L"Restore the selected window before recording.");
@@ -118,10 +110,5 @@ std::wstring CaptureInputFilter(const CaptureTarget& target, int fps) {
     filter += target.kind == CaptureKind::Window ? L"hwnd=" : L"hmonitor=";
     filter += std::to_wstring(target.handle) + L":capture_cursor=0:output_fmt=bgra:max_framerate=" + std::to_wstring(fps);
     if (target.kind == CaptureKind::Window) filter += L":capture_border=0:resize_mode=scale_aspect";
-    if (target.kind == CaptureKind::Region) {
-        filter += L":crop_left=" + std::to_wstring(target.x) + L":crop_top=" + std::to_wstring(target.y)
-            + L":crop_right=" + std::to_wstring(target.sourceWidth - target.x - target.regionWidth)
-            + L":crop_bottom=" + std::to_wstring(target.sourceHeight - target.y - target.regionHeight);
-    }
     return filter;
 }

@@ -52,7 +52,7 @@ jobs:
       - name: Test all bitrate presets with real synthetic encoding
         shell: pwsh
         run: .\tests\bitrate-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe
-      - name: Test capture-source validation and selected-area geometry
+      - name: Test Screen and Window capture-source validation
         shell: pwsh
         run: .\tests\source-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe
       - name: Test recording finalization and recovery

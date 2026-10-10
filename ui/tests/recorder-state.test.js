@@ -23,7 +23,7 @@ test('update downloads preserve capture preferences and installation waits for i
   }
   assert.equal(canInstallUpdate({ ...next, state: 'idle', update: { status: 'ready' } }), true);
   assert.equal(canInstallUpdate({ ...next, state: 'idle', update: { status: 'error' } }), false);
-  assert.equal(canInstallUpdate({ ...next, state: 'idle', selectingSource: true, update: { status: 'ready' } }), false);
+  assert.equal(canInstallUpdate({ ...next, state: 'idle', update: { status: 'ready' } }, true), false);
 });
 
 test('switching resolution preserves valid FPS and clamps 120 FPS outside 1080p', () => {
@@ -59,6 +59,6 @@ test('malformed nested host state cannot crash source controls or alerts', () =>
     { notice: { text: 'bad', severity: 'invalid' } }, { outputFolder: {} }]) {
     assert.equal(parseStateMessage({ type: 'state', state: 'idle', ...fields }), null);
   }
-  assert.ok(parseStateMessage({ type: 'state', state: 'idle', sources: [], captureSource: { kind: 'region', ready: false },
+  assert.ok(parseStateMessage({ type: 'state', state: 'idle', sources: [], captureSource: { kind: 'window', ready: false },
     notice: { text: 'Choose a source', severity: 'warning' } }));
 });

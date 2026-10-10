@@ -1,5 +1,8 @@
 # Capture source audit — 1.6.0
 
+Historical report: Area capture was removed in 1.6.2 at the user's request.
+Current versions offer Screen and Window only.
+
 ## Features and safety
 
 - Screen, Window and Area modes. Each connected display has an explicit backend identity; windows are selected by exact HWND/process/thread/class identity, never title regex.
