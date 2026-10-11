@@ -20,6 +20,7 @@ jobs:
       - name: Build in Debian 12 for Debian 12/13 compatibility
         run: docker build --progress=plain -f linux/Dockerfile -t camcord-debian .
       - name: Test isolated install, real X11 capture/audio, UI and uninstall
+        timeout-minutes: 5
         run: docker run --rm --shm-size=512m camcord-debian
       - name: Collect verified Debian package
         run: |

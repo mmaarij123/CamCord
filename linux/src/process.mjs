@@ -28,8 +28,10 @@ export class ManagedProcess {
   }
   async stop({interrupt = false, timeout = 0} = {}) {
     if (!this.exited) {
+      this.child.stdin.end();
+      // SIGINT alone can leave a raw-video demuxer blocked on its pipe read.
+      // EOF releases that read; the signal also releases live audio inputs.
       if (interrupt) this.child.kill('SIGINT');
-      else this.child.stdin.end();
     }
     let timer;
     if (timeout) timer = setTimeout(() => { if (!this.exited) this.child.kill('SIGKILL'); }, timeout);

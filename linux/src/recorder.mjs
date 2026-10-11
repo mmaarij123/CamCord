@@ -67,7 +67,13 @@ export class Recorder {
       const deadline=performance.now()+(portal?180000:10000);
       while(!this.latest && !this.capture.exited && performance.now()<deadline) await new Promise(resolve=>setTimeout(resolve,20));
       if(!this.latest) throw new Error(portal?'Capture was cancelled or the desktop portal did not provide frames. Choose a source and try again.':'No frames arrived. Restore the selected window or choose another source.');
-      await this.startSegment();
+      try {await this.startSegment();} catch(error) {
+        if(!error.encoderFailure || !this.encoder.hardware) throw error;
+        await this.abortEncoder();this.segments.pop();this.failed=null;
+        this.encoder={name:'libx264',label:'Software H.264',hardware:false};
+        if(this.settings.fps===120)this.settings.fps=60;
+        await this.startSegment();
+      }
     } catch(error) {await this.abortSource();await this.abortEncoder();this.state='idle';throw this.recoveryError(error);}
   }
   async audioSources() {
@@ -104,13 +110,15 @@ export class Recorder {
     this.pumping=true;this.segmentAt=performance.now();this.state='recording';this.segments.push(file);
     this.pumpTask=this.pump().catch(error=>{this.failed=error;this.pumping=false;this.onFailure(error.message);});
     await new Promise(resolve=>setTimeout(resolve,700));
-    if(this.video.exited || this.failed) throw new Error('The video encoder or audio device stopped during startup. See the recovery log.');
+    if(this.video.exited || this.failed) {
+      const error=new Error('The video encoder or audio device stopped during startup. See the recovery log.');error.encoderFailure=true;throw error;
+    }
   }
   async pump() {
     const interval=1000/this.settings.fps;let next=performance.now();
     while(this.pumping && !this.capture.exited) {
       const frame=this.latest;
-      if(frame) {this.frames.retain(frame);await this.video.write(frame);this.frames.release(frame);}
+      if(frame) {const cache=this.frames;cache.retain(frame);await this.video.write(frame);cache.release(frame);}
       next+=interval;
       if(performance.now()-next>5000) throw new Error('The encoder cannot keep up. Lower the frame rate or bitrate before recording again.');
       await new Promise(resolve=>setTimeout(resolve,Math.max(0,next-performance.now())));
