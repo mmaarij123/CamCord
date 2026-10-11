@@ -31,6 +31,21 @@ jobs:
           cd dist
           sha256sum CamCord-Debian-amd64.deb > SHA256SUMS-Linux.txt
           dpkg-deb --info CamCord-Debian-amd64.deb
+      - name: Verify runtime dependencies on clean Debian 12 and 13
+        timeout-minutes: 10
+        run: |
+          for image in debian:bookworm-slim debian:trixie-slim; do
+            docker run --rm -v "$PWD/dist:/packages:ro" "$image" sh -eu -c '
+              apt-get update
+              apt-get install -y --no-install-recommends /packages/CamCord-Debian-amd64.deb
+              ldd /opt/camcord/camcord > /tmp/runtime-libraries
+              cat /tmp/runtime-libraries
+              if grep -q "not found" /tmp/runtime-libraries; then exit 1; fi
+              test "$(stat -c %a /opt/camcord/chrome-sandbox)" = 4755
+              dpkg -r camcord
+              test ! -e /opt/camcord/camcord
+            '
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: CamCord-Debian-amd64
