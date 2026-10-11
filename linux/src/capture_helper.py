@@ -44,6 +44,12 @@ class XImage(C.Structure):
                 ('red_mask', C.c_ulong), ('green_mask', C.c_ulong), ('blue_mask', C.c_ulong)]
 
 
+class Visual(C.Structure):
+    _fields_ = [('ext_data', C.c_void_p), ('visual_id', C.c_ulong), ('class_', C.c_int),
+                ('red_mask', C.c_ulong), ('green_mask', C.c_ulong), ('blue_mask', C.c_ulong),
+                ('bits_per_rgb', C.c_int), ('map_entries', C.c_int)]
+
+
 class Monitor(C.Structure):
     _fields_ = [('name', C.c_ulong), ('primary', C.c_int), ('automatic', C.c_int), ('noutput', C.c_int),
                 ('x', C.c_int), ('y', C.c_int), ('width', C.c_int), ('height', C.c_int),
@@ -234,8 +240,14 @@ def capture_x11(args):
                 desktop.lib.XSync(desktop.display, False)
                 if not image or desktop.error: raise RuntimeError('The selected source is unavailable.')
                 frame = image.contents
+                masks = (frame.red_mask, frame.green_mask, frame.blue_mask)
+                # XGetImage on a named pixmap has no Visual and can report zero
+                # channel masks. Its owning window's Visual defines that layout.
+                if window and masks == (0, 0, 0):
+                    visual = C.cast(attrs.visual, C.POINTER(Visual)).contents
+                    masks = (visual.red_mask, visual.green_mask, visual.blue_mask)
                 if (frame.bits_per_pixel != 32 or frame.byte_order != 0 or frame.bytes_per_line != w * 4
-                        or frame.red_mask != 0xff0000 or frame.green_mask != 0xff00 or frame.blue_mask != 0xff):
+                        or masks != (0xff0000, 0xff00, 0xff)):
                     raise RuntimeError('This X11 color format is not supported. Use a standard 24/32-bit desktop.')
                 if last_size != (w, h):
                     source.set_property('caps', Gst.Caps.from_string(f'video/x-raw,format=BGRA,width={w},height={h},framerate={args.fps}/1'))

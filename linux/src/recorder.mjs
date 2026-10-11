@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { ManagedProcess, run } from './process.mjs';
 import { writableFolder, normalizeSettings, DEFAULT_SETTINGS } from './preferences.mjs';
 import { videoBitrateKbps, videoPeakMbps } from '../shared/recording-quality.js';
+import { FrameCache } from './frames.mjs';
 
 export const HELPER = fileURLToPath(new URL('./capture_helper.py', import.meta.url));
 export function encodingArgs(settings, encoder) {
@@ -37,6 +38,7 @@ export class Recorder {
     Object.assign(this,{ffmpeg,python,helper,onFailure}); this.state='idle';this.settings={...DEFAULT_SETTINGS};this.elapsedMs=0;this.segments=[];
   }
   elapsedSeconds() {return Math.floor((this.elapsedMs+(this.state==='recording'?performance.now()-this.segmentAt:0))/1000);}
+  get latest() {return this.frames?.latest ?? null;}
   async sources(portal, excludePid) {
     if(portal) return ['display','window'].map(kind=>({kind,id:`portal:${kind}`,label:`Choose ${kind==='display'?'screen':'window'} in the system picker when recording`,primary:kind==='display'}));
     return JSON.parse(await run(this.python,[this.helper,'list','--exclude-pid',String(excludePid)]));
@@ -55,13 +57,9 @@ export class Recorder {
       this.source=source;this.portal=portal;
       this.capture=new ManagedProcess(this.python,[this.helper,'capture','--kind',source.kind,'--id',source.id,'--width',String(this.settings.width),
         '--height',String(this.settings.height),'--fps',String(this.settings.fps),...(portal?['--portal']:[])],path.join(this.session,'source.log'));
-      this.latest=null;this.remainder=Buffer.alloc(0);this.sourceStopping=false;this.frameBytes=this.settings.width*this.settings.height*4;
+      this.sourceStopping=false;this.frameBytes=this.settings.width*this.settings.height*4;this.frames=new FrameCache(this.frameBytes);
       this.capture.child.stdout.on('data', chunk=>{
-        // At most one partial frame plus the latest complete frame is retained.
-        const bytes=this.remainder.length?Buffer.concat([this.remainder,chunk]):chunk;
-        const complete=Math.floor(bytes.length/this.frameBytes);
-        if(complete) this.latest=Buffer.from(bytes.subarray((complete-1)*this.frameBytes,complete*this.frameBytes));
-        this.remainder=Buffer.from(bytes.subarray(complete*this.frameBytes));
+        this.frames.accept(chunk);
       });
       this.capture.done.then(()=>{
         if(!this.sourceStopping && ['recording','paused'].includes(this.state)) this.onFailure('The selected source closed, was minimized, disconnected or its capture permission ended.');
@@ -112,7 +110,7 @@ export class Recorder {
     const interval=1000/this.settings.fps;let next=performance.now();
     while(this.pumping && !this.capture.exited) {
       const frame=this.latest;
-      if(frame) await this.video.write(frame);
+      if(frame) {this.frames.retain(frame);await this.video.write(frame);this.frames.release(frame);}
       next+=interval;
       if(performance.now()-next>5000) throw new Error('The encoder cannot keep up. Lower the frame rate or bitrate before recording again.');
       await new Promise(resolve=>setTimeout(resolve,Math.max(0,next-performance.now())));
@@ -137,7 +135,7 @@ export class Recorder {
   }
   async resume() {
     if(this.state!=='paused' || this.failed || this.capture.exited) throw this.recoveryError(new Error('This source cannot resume. Stop and save this session first.'));
-    this.latest=null;this.capture.child.stdin.write('resume\n');
+    this.frames.reset();this.capture.child.stdin.write('resume\n');
     const deadline=performance.now()+10000;
     while(!this.latest && !this.capture.exited && performance.now()<deadline) await new Promise(resolve=>setTimeout(resolve,20));
     if(!this.latest) throw new Error('No new frames arrived from the selected source.');
@@ -174,5 +172,5 @@ export class Recorder {
   }
   recoveryError(error) {return new Error(`${error.message}${this.session?`\nRecovery files: ${this.session}`:''}`);}
   async abortEncoder() {this.pumping=false;if(this.video){this.video.child.kill('SIGINT');await this.video.stop({interrupt:true,timeout:3000}).catch(()=>{});this.video=null;}if(this.pumpTask)await this.pumpTask;}
-  async abortSource() {this.sourceStopping=true;if(this.capture){this.capture.child.kill('SIGTERM');await this.capture.stop({interrupt:true,timeout:3000}).catch(()=>{});this.capture=null;}this.latest=null;this.remainder=null;}
+  async abortSource() {this.sourceStopping=true;if(this.capture){this.capture.child.kill('SIGTERM');await this.capture.stop({interrupt:true,timeout:3000}).catch(()=>{});this.capture=null;}this.frames=null;}
 }

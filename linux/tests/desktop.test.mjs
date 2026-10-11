@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, readdir } from 'node:fs/promises';
 import { once } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,7 +12,14 @@ import { DEFAULT_SETTINGS } from '../src/preferences.mjs';
 const enabled=process.env.CAMCORD_DESKTOP_TEST==='1';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 test('real X11 window updates under occlusion; pause, audio, source loss and recovery', {skip:!enabled,timeout:120000},async t=>{
-  const root=await mkdtemp(path.join(os.tmpdir(),'camcord-desktop-test-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const root=await mkdtemp(path.join(os.tmpdir(),'camcord-desktop-test-'));
+  t.after(async()=>{
+    for(const item of await readdir(path.join(root,'.camcord-sessions')).catch(()=>[])) {
+      const folder=path.join(root,'.camcord-sessions',item);
+      for(const file of (await readdir(folder)).filter(name=>name.endsWith('.log')))console.log(`Fixture ${file}: ${(await readFile(path.join(folder,file),'utf8')).slice(-4000)}`);
+    }
+    await rm(root,{recursive:true,force:true});
+  });
   const fixture=spawn('python3',[fileURLToPath(new URL('./x11_fixture.py',import.meta.url))],{stdio:['pipe','pipe','inherit']});
   t.after(()=>fixture.kill('SIGTERM'));
   const [first]=await once(fixture.stdout,'data');const id=first.toString().trim();assert.match(id,/^window:/);

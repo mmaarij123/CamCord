@@ -9,10 +9,18 @@ import { newerVersion, parseRelease, verifyUpdate, sha256, Updater, ASSET_NAME }
 import { encodingArgs, Recorder, concatLine } from '../src/recorder.mjs';
 import { run } from '../src/process.mjs';
 import { BITRATE_PRESETS, videoBitrateKbps } from '../shared/recording-quality.js';
+import { FrameCache } from '../src/frames.mjs';
 
 async function fixture(t) {const folder=await mkdtemp(path.join(os.tmpdir(),'camcord-linux-test-'));t.after(()=>rm(folder,{recursive:true,force:true}));return folder;}
 function release(version='1.7.1') {return {draft:false,prerelease:false,tag_name:`v${version}`,assets:[{name:ASSET_NAME,state:'uploaded',size:3,
   browser_download_url:`https://github.com/mmaarij123/CamCord/releases/download/v${version}/${ASSET_NAME}`,digest:'sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'}]};}
+test('raw frame cache handles fragmented chunks and never overwrites an active encoder frame',()=>{
+  const cache=new FrameCache(4);cache.accept(Buffer.from([1,2]));assert.equal(cache.latest,null);
+  cache.accept(Buffer.from([3,4,5]));const pinned=cache.latest;cache.retain(pinned);
+  cache.accept(Buffer.from([6,7,8,9,10,11,12]));assert.deepEqual([...pinned],[1,2,3,4]);assert.deepEqual([...cache.latest],[9,10,11,12]);
+  const buffers=new Set();for(let i=0;i<1000;i++){cache.accept(Buffer.from([20,21,22,23]));buffers.add(cache.latest);}
+  assert.ok(buffers.size<=2);cache.release(pinned);cache.reset();assert.equal(cache.latest,null);
+});
 test('strict quality, shared bitrate recommendations and hardware flags',()=>{
   assert.equal(normalizeSettings(DEFAULT_SETTINGS,{height:720,fps:120}).fps,60);
   assert.deepEqual(normalizeSettings(DEFAULT_SETTINGS,{fps:'120',microphone:'yes',bitrateMbps:16.5}),DEFAULT_SETTINGS);
