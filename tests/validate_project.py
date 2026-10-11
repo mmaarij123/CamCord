@@ -26,6 +26,8 @@ for source in (ROOT / "src").glob("*.cpp"):
 package = json.loads(text("ui/package.json"))
 native_version = re.search(r'CAMCORD_VERSION\[\] = "([0-9.]+)"', text("src/AppVersion.h"))
 require(native_version and native_version.group(1) == package["version"], "updater version must match ui/package.json")
+linux_package = json.loads(text("linux/package.json"))
+require(linux_package["version"] == package["version"], "Debian and Windows/UI release versions must match")
 require(re.fullmatch(r"\d+\.\d+\.\d+", package["version"]), "UI package version must be major.minor.patch")
 require((ROOT / "ui/package-lock.json").is_file(), "locked frontend dependencies are required")
 

@@ -47,6 +47,7 @@ export default function App() {
   const elapsed = formatElapsed(app.elapsedSeconds);
   const frameRates = app.settings.height === 1080 ? HIGH_FRAME_RATES : FRAME_RATES;
   const width = app.settings.height === 480 ? 854 : app.settings.height === 720 ? 1280 : 1920;
+  const linux = app.platform === 'linux';
   const qualityLabel = `${width} × ${app.settings.height} · ${app.settings.fps} FPS`;
 
   useEffect(() => {
@@ -166,8 +167,8 @@ export default function App() {
               : recording ? (app.encoder ? `Encoding with ${app.encoder}` : `Capturing ${app.captureSource.label}`)
                 : !app.captureSource.ready ? 'Choose an available capture source before recording.'
                   : app.captureSource.kind === 'window' ? 'Only the selected window will be recorded. Keep it restored.'
-                : app.captureExcluded ? 'Your cursor and CamCord controls stay out of the final video.'
-                  : 'Your cursor is hidden. Minimize CamCord to keep its controls out of the video.';
+                : app.sourceDescription || (app.captureExcluded ? 'Your cursor and CamCord controls stay out of the final video.'
+                  : 'Your cursor is hidden. Minimize CamCord to keep its controls out of the video.');
 
   return (
     <div className="app-shell">
@@ -260,7 +261,7 @@ export default function App() {
           </div>
           <section className="app-preferences" aria-labelledby="app-preferences-heading">
             <h3 id="app-preferences-heading">App settings</h3>
-            <SettingRow icon={<PowerSettingsNewRounded />} label="Launch at Windows startup" description="Open minimized when you sign in" action={<Switch checked={app.startupEnabled} disabled={settingsDisabled || startupPending} onChange={(event) => changeStartup(event.target.checked)} slotProps={{ input: { 'aria-label': 'Launch at Windows startup' } }} />} />
+            <SettingRow icon={<PowerSettingsNewRounded />} label={linux ? 'Launch at login' : 'Launch at Windows startup'} description="Open minimized when you sign in" action={<Switch checked={app.startupEnabled} disabled={settingsDisabled || startupPending} onChange={(event) => changeStartup(event.target.checked)} slotProps={{ input: { 'aria-label': linux ? 'Launch at login' : 'Launch at Windows startup' } }} />} />
             <SettingRow icon={<SystemUpdateAltRounded />} label="Automatic updates" description="Check and download new releases" action={<Switch checked={app.settings.autoCheckUpdates} disabled={settingsDisabled} onChange={(event) => changeSettings({ autoCheckUpdates: event.target.checked })} slotProps={{ input: { 'aria-label': 'Automatically check for updates' } }} />} />
             <div className="update-heading"><strong>Updates</strong><span>Version {app.appVersion}</span></div>
             <p className={`update-message ${app.update.status === 'error' ? 'is-error' : ''}`} role="status" aria-live="polite">

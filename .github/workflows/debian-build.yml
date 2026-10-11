@@ -1,0 +1,39 @@
+name: Build and test Debian package
+
+on:
+  push:
+    branches: ["codex/debian-port"]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  debian:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build in Debian 12 for Debian 12/13 compatibility
+        run: docker build --progress=plain -f linux/Dockerfile -t camcord-debian .
+      - name: Test isolated install, real X11 capture/audio, UI and uninstall
+        run: docker run --rm --shm-size=512m camcord-debian
+      - name: Collect verified Debian package
+        run: |
+          mkdir -p dist
+          container=$(docker create camcord-debian)
+          docker cp "$container:/workspace/linux/out/CamCord-Debian-amd64.deb" dist/
+          docker rm "$container"
+          cd dist
+          sha256sum CamCord-Debian-amd64.deb > SHA256SUMS-Linux.txt
+          dpkg-deb --info CamCord-Debian-amd64.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CamCord-Debian-amd64
+          path: |
+            dist/CamCord-Debian-amd64.deb
+            dist/SHA256SUMS-Linux.txt
+          if-no-files-found: error

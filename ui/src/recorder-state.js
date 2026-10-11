@@ -3,6 +3,7 @@ import { normalizeBitrate } from './recording-quality.js';
 
 export const INITIAL_STATE = {
   state: 'idle',
+  platform: windowPlatform(),
   elapsedSeconds: 0,
   settings: { height: 1080, fps: 60, bitrateMbps: 0, systemAudio: true, microphone: false, autoCheckUpdates: true },
   appVersion: packageInfo.version,
@@ -15,6 +16,8 @@ export const INITIAL_STATE = {
   captureSource: { kind: 'display', id: 'preview-primary', label: 'Primary display', ready: true, width: 1920, height: 1080 },
   sources: [{ kind: 'display', id: 'preview-primary', label: 'Primary display · 1920 × 1080', primary: true }],
 };
+
+function windowPlatform() { return typeof window !== 'undefined' && window.camcordDesktop?.platform === 'linux' ? 'linux' : 'windows'; }
 
 export const STATE_LABELS = {
   idle: 'Ready to record',
@@ -57,7 +60,8 @@ export function parseStateMessage(data) {
       ['message', 'version', 'status'].some((key) => message.update[key] !== undefined && typeof message.update[key] !== 'string'))) return null;
     if (message.notice !== undefined && (!object(message.notice) || typeof message.notice.text !== 'string' ||
       !['success', 'info', 'warning', 'error'].includes(message.notice.severity))) return null;
-    if (['outputFolder', 'lastOutput', 'encoder', 'appVersion'].some((key) => message[key] !== undefined && typeof message[key] !== 'string')) return null;
+    if (message.platform !== undefined && !['windows', 'linux'].includes(message.platform)) return null;
+    if (['outputFolder', 'lastOutput', 'encoder', 'appVersion', 'sourceDescription'].some((key) => message[key] !== undefined && typeof message[key] !== 'string')) return null;
     return message;
   } catch {
     return null;

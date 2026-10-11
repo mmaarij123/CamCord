@@ -4,6 +4,11 @@
 /third_party/
 /ui/node_modules/
 /ui/dist/
+/linux/node_modules/
+/linux/shared/
+/linux/ui/
+/linux/out/
+/linux/licenses/
 /.vs/
 /.vscode/
 /.codex/
