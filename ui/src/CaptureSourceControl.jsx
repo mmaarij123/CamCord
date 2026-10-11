@@ -6,7 +6,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import RefreshRounded from '@mui/icons-material/RefreshRounded';
 
-export default function CaptureSourceControl({ source, sources, disabled, onAction }) {
+export default function CaptureSourceControl({ source, sources, disabled, portalCapture = false, onAction }) {
   const windows = source.kind === 'window';
   const entries = sources.filter((entry) => entry.kind === (windows ? 'window' : 'display'));
   const selectedId = source.ready && entries.some((entry) => entry.id === source.id) ? source.id : '';
@@ -32,8 +32,9 @@ export default function CaptureSourceControl({ source, sources, disabled, onActi
         {entries.map((entry) => <MenuItem key={entry.id} value={entry.id} title={entry.label}><span className="source-option-label">{entry.label}</span></MenuItem>)}
       </Select>
       <p className="field-hint source-description" id="source-description">
-        {windows ? entries.length ? 'Only this window is captured, even behind other windows. Keep it restored; closing or minimizing stops and saves.' : 'No available windows. Restore a window and refresh the list.'
-          : 'Capture the full selected display. Your cursor stays hidden.'}
+        {portalCapture ? windows ? 'Choose a window in the system picker when recording starts. Keep it restored; minimized-window behavior depends on your desktop.' : 'Choose a screen in the system permission picker when recording starts. Your cursor stays hidden.'
+          : windows ? entries.length ? 'Only this window is captured, even behind other windows. Keep it restored; closing or minimizing stops and saves.' : 'No available windows. Restore a window and refresh the list.'
+            : 'Capture the full selected display. Your cursor stays hidden.'}
       </p>
       {!source.ready ? <p className="source-required" role="status">Choose an available {label.toLowerCase()} before recording.</p> : null}
       {windows ? <span className="field-hint source-audio-hint">System audio still includes all desktop playback.</span> : null}

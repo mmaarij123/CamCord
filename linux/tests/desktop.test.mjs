@@ -30,6 +30,8 @@ test('real X11 window updates under occlusion; pause, audio, source loss and rec
   const source=sources.find(item=>item.id===id);
   const settings={...DEFAULT_SETTINGS,height:480,fps:30,bitrateMbps:8,systemAudio:true,microphone:true};
   await recorder.start(settings,root,source,false);await sleep(500);
+  const playback=spawn('python3',[fileURLToPath(new URL('./playback.py',import.meta.url))],{stdio:'ignore'});
+  t.after(()=>playback.kill('SIGTERM'));
   fixture.stdin.write('cover\ngreen\n');await sleep(1200);
   const center=(Math.floor(recorder.settings.height/2)*recorder.settings.width+Math.floor(recorder.settings.width/2))*4;
   console.log(`Latest unencoded fixture pixel: ${[...recorder.latest.subarray(center,center+4)]}; encoder frames ${recorder.framesWritten}`);
@@ -42,6 +44,14 @@ test('real X11 window updates under occlusion; pause, audio, source loss and rec
   const metadata=JSON.parse(await run('ffprobe',['-v','error','-show_streams','-show_format','-of','json',saved]));
   assert.ok(metadata.streams.find(item=>item.codec_type==='audio'));assert.ok(Number(metadata.format.duration)>1);
   await run('ffmpeg',['-hide_banner','-loglevel','error','-xerror','-i',saved,'-f','null','-']);
+  const samples=path.join(root,'decoded.pcm');
+  await run('ffmpeg',['-y','-hide_banner','-loglevel','error','-i',saved,'-map','0:a:0','-ar','8000','-ac','1','-f','s16le',samples]);
+  const pcm=await readFile(samples);let peak=0,early=0;
+  for(let i=0;i+1<pcm.length;i+=2){const value=Math.abs(pcm.readInt16LE(i));peak=Math.max(peak,value);if(i<1600)early=Math.max(early,value);}
+  assert.ok(peak>300,`System audio tone is missing (${peak})`);assert.ok(early<100,`Leading silence shifted (${early})`);
+  const screen=new Recorder();active.push(screen);
+  await screen.start({...settings,systemAudio:false,microphone:false},root,sources.find(item=>item.kind==='display'),false);
+  await sleep(300);await screen.stop();
   const videoOnly=new Recorder();active.push(videoOnly);await videoOnly.start({...settings,systemAudio:false,microphone:false},root,source,false);
   fixture.stdin.write('close\n');await sleep(300);await videoOnly.stop();
   await assert.rejects(run('python3',[HELPER,'capture','--kind','window','--id',id,'--width','854','--height','480','--fps','30']));

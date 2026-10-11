@@ -7,7 +7,7 @@ import { Recorder } from './recorder.mjs';
 import { loadPreferences, atomicJson, normalizeSettings, writableFolder, startupEnabled, setStartup } from './preferences.mjs';
 import { Updater, verifyUpdate } from './updater.mjs';
 
-const {app,BrowserWindow,ipcMain,dialog,protocol,net,session,shell,powerSaveBlocker}=electron;
+const {app,BrowserWindow,ipcMain,dialog,protocol,net,session,shell,powerSaveBlocker,Menu}=electron;
 const root=fileURLToPath(new URL('../',import.meta.url)), uiRoot=path.join(root,'ui');
 const version=JSON.parse(await readFile(path.join(root,'package.json'),'utf8')).version;
 const APP_URL='camcord://app/index.html';
@@ -34,7 +34,7 @@ function send(notice,force=false) {
   const state={type:'state',platform:'linux',state:pending || recorder.state,elapsedSeconds:recorder.elapsedSeconds(),settings:preferences.settings,
     appVersion:version,startupEnabled:startup,update,encoder:recorder.encoder?.label||'',outputFolder:preferences.outputFolder,
     lastOutput:recorder.lastOutput?path.basename(recorder.lastOutput):'',captureExcluded:false,cursorHidden:true,sourceDescription:portal?'Your desktop asks permission and chooses the source when recording starts.':'',
-    sourceChanging,captureSource:source,sources:sources.map(({kind,id,label,primary})=>({kind,id,label,primary})),...(notice?{notice}:{})};
+    sourceChanging,portalCapture:portal,captureSource:source,sources:sources.map(({kind,id,label,primary})=>({kind,id,label,primary})),...(notice?{notice}:{})};
   const signature=JSON.stringify(state);if(!force && signature===lastState)return;lastState=signature;
   window.webContents.send('camcord-state',state);
 }
@@ -62,7 +62,7 @@ async function refreshSources() {
 function select(entry) {source={...entry,ready:true,width:entry.width||0,height:entry.height||0};}
 async function updateAction(type,manual=true) {
   if(updateBusy || closing)return;
-  if(type==='installUpdate' && (pending || folderDialog || recorder.state!=='idle' || update.status!=='ready')) {send({severity:'info',text:'Stop and save your recording before installing an update.'});return;}
+  if(type==='installUpdate' && (pending || folderDialog || sourceChanging || recorder.state!=='idle' || update.status!=='ready')) {send({severity:'info',text:'Stop and save your recording before installing an update.'});return;}
   updateBusy=true;updateManual=manual;
   try {
     if(type==='checkUpdates') {
@@ -161,8 +161,9 @@ app.whenReady().then(async()=>{
   });
   session.defaultSession.setPermissionRequestHandler((_,permission,callback)=>callback(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
+  Menu.setApplicationMenu(null);
   window=new BrowserWindow({width:1040,height:740,minWidth:620,minHeight:600,title:'CamCord',backgroundColor:'#0c0f14',icon:path.join(uiRoot,'camcord-logo.png'),
-    show:false,autoHideMenuBar:true,webPreferences:{preload:path.join(root,'src','preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
+    show:false,autoHideMenuBar:true,webPreferences:{preload:path.join(root,'src','preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,devTools:false,backgroundThrottling:false}});
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   window.webContents.on('will-navigate',(event,url)=>{if(url!==APP_URL)event.preventDefault();});
   ipcMain.on('camcord-command',(event,message)=>{if(trusted(event))command(message).catch(error=>send({severity:'error',text:error.message}));});

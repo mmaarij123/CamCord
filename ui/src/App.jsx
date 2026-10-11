@@ -228,7 +228,7 @@ export default function App() {
         <aside className="settings-panel" aria-label="Capture setup">
           <div className="settings-heading"><div><span>Capture setup</span><h2>Recording setup</h2></div><TuneRounded /></div>
           <Suspense fallback={<div className="source-settings source-loading" role="status">Loading capture sources…</div>}>
-            <CaptureSourceControl source={app.captureSource} sources={app.sources} disabled={settingsDisabled} onAction={changeSource} />
+            <CaptureSourceControl source={app.captureSource} sources={app.sources} disabled={settingsDisabled} portalCapture={app.portalCapture} onAction={changeSource} />
           </Suspense>
           <div className="settings-group">
             <span className="field-label" id="resolution-label">Resolution</span>
