@@ -22,6 +22,7 @@ let updateBusy=false,updateManual=false,updateInfo,updateFile,update={status:'id
 let nextCheck=Date.now()+5000;
 const portal=process.env.XDG_SESSION_TYPE==='wayland' || Boolean(process.env.WAYLAND_DISPLAY);
 const recorder=new Recorder({onFailure:message=>{
+  if(recorder.capture?.exited)source={...source,ready:false};
   if(!pending && ['recording','paused'].includes(recorder.state)) action('saving',async()=>{
     await recorder.stop();return {severity:'warning',text:`${message} The completed portion was saved.`};
   });
@@ -129,9 +130,9 @@ async function command(message) {
     if(!source.ready){send({severity:'warning',text:'Choose an available source before recording.'});return;}
     await action('starting',async()=>{
       preferences.settings=normalizeSettings(preferences.settings,data.settings);holdPower();
-      await recorder.start(preferences.settings,preferences.outputFolder,source,portal);
-      preferences.settings=normalizeSettings(preferences.settings,recorder.settings);await saveSettings();
       if(source.kind==='display')window.minimize();
+      try {await recorder.start(preferences.settings,preferences.outputFolder,source,portal);} catch(error) {window.restore();throw error;}
+      preferences.settings=normalizeSettings(preferences.settings,recorder.settings);await saveSettings();
     });
   }
   send();

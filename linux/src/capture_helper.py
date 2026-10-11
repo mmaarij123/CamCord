@@ -370,7 +370,9 @@ def capture_portal(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['list', 'capture'])
+    parser.add_argument('command', choices=['list', 'capture', 'publish'])
+    parser.add_argument('--source')
+    parser.add_argument('--output')
     parser.add_argument('--exclude-pid', type=int, default=-1)
     parser.add_argument('--portal', action='store_true')
     parser.add_argument('--kind', choices=['display', 'window'])
@@ -379,7 +381,15 @@ def main():
     parser.add_argument('--height', type=int, default=1080)
     parser.add_argument('--fps', type=int, default=60)
     args = parser.parse_args()
-    if args.command == 'list':
+    if args.command == 'publish':
+        if not args.source or not args.output or not os.path.isabs(args.source) or not os.path.isabs(args.output):
+            raise RuntimeError('Invalid recording publication paths.')
+        libc = C.CDLL(None, use_errno=True)
+        libc.renameat2.argtypes = [C.c_int, C.c_char_p, C.c_int, C.c_char_p, C.c_uint]
+        libc.renameat2.restype = C.c_int
+        if libc.renameat2(-100, os.fsencode(args.source), -100, os.fsencode(args.output), 1) != 0:
+            error = C.get_errno(); raise OSError(error, os.strerror(error))
+    elif args.command == 'list':
         desktop = X11()
         try: print(json.dumps(desktop.sources(args.exclude_pid), ensure_ascii=False))
         finally: desktop.close()

@@ -22,7 +22,9 @@ dbus-run-session -- bash -euo pipefail -c '
   npm test
   python3 tests/portal_test.py
   export CAMCORD_SMOKE_TEST=1 CAMCORD_TEST_DATA=/tmp/camcord-ui-smoke
-  /opt/camcord/camcord --smoke-test
+  # Root exists only inside this disposable fixture container. Real installs
+  # retain the root-owned SUID sandbox and run as the logged-in desktop user.
+  /opt/camcord/camcord --no-sandbox --smoke-test
 '
 dpkg -r camcord
 test ! -e /opt/camcord/camcord

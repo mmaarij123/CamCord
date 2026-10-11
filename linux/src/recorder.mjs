@@ -66,7 +66,10 @@ export class Recorder {
       });
       const deadline=performance.now()+(portal?180000:10000);
       while(!this.latest && !this.capture.exited && performance.now()<deadline) await new Promise(resolve=>setTimeout(resolve,20));
-      if(!this.latest) throw new Error(portal?'Capture was cancelled or the desktop portal did not provide frames. Choose a source and try again.':'No frames arrived. Restore the selected window or choose another source.');
+      if(!this.latest) {
+        const details=(await readFile(path.join(this.session,'source.log'),'utf8').catch(()=>'')).trim().slice(-1000);
+        throw new Error((portal?'Capture was cancelled or the desktop portal did not provide frames. Choose a source and try again.':'No frames arrived. Restore the selected window or choose another source.')+(details?`\n${details}`:''));
+      }
       try {await this.startSegment();} catch(error) {
         if(!error.encoderFailure || !this.encoder.hardware) throw error;
         await this.abortEncoder();this.segments.pop();this.failed=null;
@@ -205,7 +208,12 @@ export class Recorder {
       ...(audioEnabled?['-c:a','aac','-b:a','192k','-ar','48000','-ac','2','-af','aresample=48000:async=1:first_pts=0']:['-an']),'-movflags','+faststart',finished],{timeout:24*60*60*1000});
     if(!(await stat(finished)).size) throw new Error('The finished recording is empty.');
     // Same filesystem: atomic publication without ever overwriting another file.
-    await link(finished,this.output);
+    try {await link(finished,this.output);} catch(error) {
+      if(process.platform!=='linux' || !['EPERM','ENOTSUP','EOPNOTSUPP'].includes(error.code))throw error;
+      // Removable filesystems without hard links still get atomic publication
+      // with no replacement. Never fall back to an overwriting rename/copy.
+      await run(this.python,[this.helper,'publish','--source',finished,'--output',this.output]);
+    }
   }
   recoveryError(error) {return new Error(`${error.message}${this.session?`\nRecovery files: ${this.session}`:''}`);}
   async abortEncoder() {this.pumping=false;this.audioStopping=true;if(this.video){this.video.child.kill('SIGINT');await this.video.stop({interrupt:true,timeout:3000}).catch(()=>{});this.video=null;}for(const audio of this.audioProcesses||[])await audio.stop({interrupt:true,timeout:3000}).catch(()=>{});this.audioProcesses=[];if(this.pumpTask)await this.pumpTask;}

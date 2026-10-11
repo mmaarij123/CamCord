@@ -4,6 +4,8 @@ import os
 import subprocess
 import sys
 import unittest
+import tempfile
+from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from capture_helper import gst_modules, Portal
 Gst, GLib, Gio = gst_modules()
@@ -90,6 +92,17 @@ class PortalWireTests(unittest.TestCase):
             finally: portal.close()
         with self.assertRaisesRegex(RuntimeError, 'cancelled or denied'):
             Portal(GLib, Gio).request('CreateSession', '(a{sv})', (), {'session_handle_token': GLib.Variant('s', 'denied'), 'test-deny': GLib.Variant('b', True)})
+
+    def test_atomic_publish_never_replaces_existing_recording(self):
+        helper = os.path.join(os.path.dirname(__file__), '..', 'src', 'capture_helper.py')
+        with tempfile.TemporaryDirectory(prefix='camcord-publish-') as folder:
+            source = Path(folder) / 'finished.mp4'; target = Path(folder) / 'recording.mp4'
+            source.write_bytes(b'new recording'); target.write_bytes(b'existing recording')
+            command = [sys.executable, helper, 'publish', '--source', str(source), '--output', str(target)]
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            self.assertEqual(target.read_bytes(), b'existing recording'); self.assertTrue(source.exists())
+            target.unlink(); self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            self.assertFalse(source.exists()); self.assertEqual(target.read_bytes(), b'new recording')
 
 
 if __name__ == '__main__':
