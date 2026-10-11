@@ -95,19 +95,21 @@ export class Recorder {
   async startSegment() {
     const file=path.join(this.session,`segment_${this.segments.length+1}.mkv`);
     const audios=await this.audioSources();
+    this.audioStopping=false;this.audioProcesses=[];
+    const audioFiles=[],epoch=(Date.now()/1000).toFixed(3);
+    for(const [index,source] of audios.entries()) {
+      const wave=path.join(this.session,`segment_${this.segments.length+1}_audio_${index}.wav`);
+      const process=new ManagedProcess(this.ffmpeg,['-y','-hide_banner','-loglevel','warning','-copyts','-probesize','32','-analyzeduration','0',
+        '-use_wallclock_as_timestamps','1','-f','pulse','-sample_rate','48000','-channels','2','-i',source,
+        '-af',`asetpts=PTS-${epoch}/TB,aresample=48000:async=1:first_pts=0`,'-c:a','pcm_s16le','-ar','48000','-ac','2','-rf64','always',wave],`${wave}.log`);
+      this.audioProcesses.push(process);audioFiles.push(wave);
+      process.done.then(()=>{if(!this.audioStopping && this.state==='recording'){this.failed=new Error('An audio device stopped unexpectedly. Recovery files were retained.');this.onFailure(this.failed.message);}});
+    }
     const args=['-y','-hide_banner','-loglevel','warning','-probesize','32','-analyzeduration','0','-use_wallclock_as_timestamps','1',
       '-f','rawvideo','-pixel_format','bgra','-video_size',`${this.settings.width}x${this.settings.height}`,'-framerate',String(this.settings.fps),'-i','pipe:0'];
-    for(const source of audios) args.push('-thread_queue_size','512','-probesize','32','-analyzeduration','0','-use_wallclock_as_timestamps','1','-f','pulse','-sample_rate','48000','-channels','2','-i',source);
-    args.push('-map','0:v:0',...encodingArgs(this.settings,this.encoder),'-r',String(this.settings.fps));
-    if(audios.length===2) args.push('-filter_complex','[1:a]aresample=48000:async=1:first_pts=0[a1];[2:a]aresample=48000:async=1:first_pts=0[a2];[a1][a2]amix=inputs=2:duration=longest:dropout_transition=2[a]',
-      '-map','[a]','-c:a','pcm_s16le','-ar','48000','-ac','2');
-    else if(audios.length===1) args.push('-map','1:a:0','-af','aresample=48000:async=1:first_pts=0','-c:a','pcm_s16le','-ar','48000','-ac','2');
-    else args.push('-an');
-    // Keep audio lossless until the single final AAC encode. Independently
-    // primed AAC segments otherwise overlap DTS across pause/resume boundaries.
-    args.push('-cluster_time_limit','1000','-flush_packets','1',file);
-    this.video=new ManagedProcess(this.ffmpeg,args,`${file}.log`);this.hasAudio=audios.length>0;
-    this.pumping=true;this.framesWritten=0;this.segmentAt=performance.now();this.state='recording';this.segments.push(file);
+    args.push('-map','0:v:0','-an',...encodingArgs(this.settings,this.encoder),'-r',String(this.settings.fps),'-cluster_time_limit','1000','-flush_packets','1',file);
+    this.video=new ManagedProcess(this.ffmpeg,args,`${file}.log`);
+    this.pumping=true;this.framesWritten=0;this.segmentAt=performance.now();this.state='recording';this.segments.push({video:file,audios:audioFiles});
     this.pumpTask=this.pump().catch(error=>{this.failed=error;this.pumping=false;this.onFailure(error.message);});
     await new Promise(resolve=>setTimeout(resolve,700));
     const deadline=performance.now()+10000;
@@ -136,7 +138,10 @@ export class Recorder {
     clearTimeout(this.stopTimer);
     if(timedOut) {await this.pumpTask;this.failed ||= new Error('The encoder stopped accepting frames. Recovery files were retained.');}
     const video=this.video;this.video=null;
-    try {await video.stop({interrupt:this.hasAudio,timeout:this.failed?3000:0});} catch(error) {this.failed ||= error;}
+    try {await video.stop({timeout:this.failed?3000:0});} catch(error) {this.failed ||= error;}
+    this.audioStopping=true;
+    for(const audio of this.audioProcesses) {try{await audio.stop({interrupt:true,timeout:10000});}catch(error){this.failed ||= error;}}
+    this.audioProcesses=[];
     if(this.failed) throw this.recoveryError(this.failed);
   }
   async pause() {
@@ -165,22 +170,44 @@ export class Recorder {
   async finalize() {
     if(!this.segments.length) throw new Error('No video segment was produced.');
     const ready=[];
-    for(const [index,file] of this.segments.entries()) {
+    const audioEnabled=this.settings.systemAudio || this.settings.microphone;
+    for(const [index,segment] of this.segments.entries()) {
+      const file=typeof segment==='string'?segment:segment.video;
       if(!(await stat(file)).size) throw new Error('An empty recording segment was retained for recovery.');
       await run(this.ffmpeg,['-hide_banner','-loglevel','error','-xerror','-err_detect','explode','-i',file,'-map','0:v:0','-an','-f','null','-'],{timeout:24*60*60*1000});
       const muxed=path.join(this.session,`ready_${index}.mkv`);
-      await run(this.ffmpeg,['-y','-hide_banner','-loglevel','error','-xerror','-i',file,'-map','0','-c:v','copy','-c:a','pcm_s16le','-ar','48000','-ac','2',muxed],{timeout:24*60*60*1000});
+      const audios=[];
+      if(audioEnabled) for(const wave of (typeof segment==='string'?[file]:segment.audios)) {
+        const size=(await stat(wave)).size;
+        if(size<128) {
+          const header=await readFile(wave);
+          if(header.length>=36 && header.toString('ascii',0,4)==='RF64' && header.toString('ascii',12,16)==='ds64' && header.readBigUInt64LE(28)===0n)continue;
+        }
+        const metadata=JSON.parse(await run(this.ffmpeg.replace(/ffmpeg(\.exe)?$/,'ffprobe$1'),['-v','error','-show_entries','format=duration:stream=codec_type','-of','json',wave]));
+        if(metadata.streams.some(stream=>stream.codec_type==='audio')) audios.push(wave);
+      }
+      const args=['-y','-hide_banner','-loglevel','error','-xerror','-i',file];
+      for(const wave of audios) args.push('-i',wave);
+      if(audioEnabled) {
+        if(!audios.length)args.push('-f','lavfi','-i','anullsrc=r=48000:cl=stereo');
+        if(audios.length<2)args.push('-map','0:v:0','-map','1:a:0','-af','aresample=48000:async=1:first_pts=0,apad');
+        else args.push('-filter_complex','[1:a]aresample=48000:async=1:first_pts=0[a1];[2:a]aresample=48000:async=1:first_pts=0[a2];[a1][a2]amix=inputs=2:duration=longest:dropout_transition=2,apad[a]',
+          '-map','0:v:0','-map','[a]');
+        args.push('-c:v','copy','-c:a','pcm_s16le','-ar','48000','-ac','2','-shortest');
+      } else args.push('-map','0:v:0','-c:v','copy','-an');
+      args.push(muxed);
+      await run(this.ffmpeg,args,{timeout:24*60*60*1000});
       ready.push(muxed);
     }
     const list=path.join(this.session,'concat.txt'),finished=path.join(this.session,'finished.mp4');
     await writeFile(list,ready.map(concatLine).join(''),{mode:0o600});
     await run(this.ffmpeg,['-y','-hide_banner','-loglevel','error','-xerror','-f','concat','-safe','0','-i',list,'-map','0','-c:v','copy',
-      '-c:a','aac','-b:a','192k','-ar','48000','-ac','2','-af','aresample=48000:async=1:first_pts=0','-movflags','+faststart',finished],{timeout:24*60*60*1000});
+      ...(audioEnabled?['-c:a','aac','-b:a','192k','-ar','48000','-ac','2','-af','aresample=48000:async=1:first_pts=0']:['-an']),'-movflags','+faststart',finished],{timeout:24*60*60*1000});
     if(!(await stat(finished)).size) throw new Error('The finished recording is empty.');
     // Same filesystem: atomic publication without ever overwriting another file.
     await link(finished,this.output);
   }
   recoveryError(error) {return new Error(`${error.message}${this.session?`\nRecovery files: ${this.session}`:''}`);}
-  async abortEncoder() {this.pumping=false;if(this.video){this.video.child.kill('SIGINT');await this.video.stop({interrupt:true,timeout:3000}).catch(()=>{});this.video=null;}if(this.pumpTask)await this.pumpTask;}
+  async abortEncoder() {this.pumping=false;this.audioStopping=true;if(this.video){this.video.child.kill('SIGINT');await this.video.stop({interrupt:true,timeout:3000}).catch(()=>{});this.video=null;}for(const audio of this.audioProcesses||[])await audio.stop({interrupt:true,timeout:3000}).catch(()=>{});this.audioProcesses=[];if(this.pumpTask)await this.pumpTask;}
   async abortSource() {this.sourceStopping=true;if(this.capture){this.capture.child.kill('SIGTERM');await this.capture.stop({interrupt:true,timeout:3000}).catch(()=>{});this.capture=null;}this.frames=null;}
 }

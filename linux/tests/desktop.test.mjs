@@ -36,7 +36,7 @@ test('real X11 window updates under occlusion; pause, audio, source loss and rec
   assert.ok(recorder.latest[center+1]>100,'Selected window surface stopped updating behind the cover');
   await recorder.pause();assert.equal(recorder.state,'paused');
   const pixel=path.join(root,'last.rgb');
-  await run('ffmpeg',['-y','-hide_banner','-loglevel','error','-sseof','-0.2','-i',recorder.segments[0],'-frames:v','1','-vf','scale=1:1','-pix_fmt','rgb24','-f','rawvideo',pixel]);
+  await run('ffmpeg',['-y','-hide_banner','-loglevel','error','-sseof','-0.2','-i',recorder.segments[0].video,'-frames:v','1','-vf','scale=1:1','-pix_fmt','rgb24','-f','rawvideo',pixel]);
   const bytes=await readFile(pixel);assert.ok(bytes[1]>100 && bytes[0]<60 && bytes[2]<60,`Occluded window did not update: ${[...bytes]}`);
   await sleep(300);await recorder.resume();await sleep(500);const saved=await recorder.stop();assert.equal(recorder.state,'idle');
   const metadata=JSON.parse(await run('ffprobe',['-v','error','-show_streams','-show_format','-of','json',saved]));
