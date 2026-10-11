@@ -43,7 +43,8 @@ export default function App() {
   const busy = !idle && !recording && !paused;
   const installingUpdate = app.update.status === 'installing';
   const updateBusy = ['checking', 'downloading', 'installing'].includes(app.update.status);
-  const settingsDisabled = !idle || !connected || installingUpdate || sourcePending;
+  const sourceBusy = sourcePending || app.sourceChanging;
+  const settingsDisabled = !idle || !connected || installingUpdate || sourceBusy;
   const elapsed = formatElapsed(app.elapsedSeconds);
   const frameRates = app.settings.height === 1080 ? HIGH_FRAME_RATES : FRAME_RATES;
   const width = app.settings.height === 480 ? 854 : app.settings.height === 720 ? 1280 : 1920;
@@ -101,7 +102,7 @@ export default function App() {
 
   function updateApp(type) {
     if (!connected || updateBusy) return;
-    if (type === 'installUpdate' && !canInstallUpdate({ ...app, state: currentState }, sourcePending)) return;
+    if (type === 'installUpdate' && !canInstallUpdate({ ...app, state: currentState }, sourceBusy)) return;
     if (!sendToHost({ type })) {
       setNotice({ severity: 'info', text: 'Updates are available in the CamCord desktop app.', key: Date.now() });
     }
@@ -158,7 +159,7 @@ export default function App() {
   }
 
   const readoutNote = !connected ? 'Connecting to the recorder…'
-    : sourcePending ? 'Updating capture sources…'
+    : sourceBusy ? 'Updating capture sources…'
     : currentState === 'starting' ? 'Checking your selected source, audio, and encoder.'
       : currentState === 'pausing' ? 'Finishing the current recording segment.'
         : currentState === 'resuming' ? 'Preparing your next recording segment.'
@@ -271,7 +272,7 @@ export default function App() {
             <div className="update-actions">
               <Button variant="outlined" size="small" disabled={!connected || updateBusy} onClick={() => updateApp('checkUpdates')} startIcon={app.update.status === 'checking' ? <CircularProgress size={12} color="inherit" /> : null}>Check now</Button>
               {app.update.status === 'available' ? <Button variant="contained" size="small" disabled={!connected || updateBusy} onClick={() => updateApp('downloadUpdate')}>Download update</Button> : null}
-              {app.update.status === 'ready' ? <Tooltip title={!idle ? 'Stop and save your recording first' : sourcePending ? 'Finish changing your capture source first' : 'CamCord will restart after installation'}><span><Button variant="contained" size="small" disabled={!connected || !canInstallUpdate({ ...app, state: currentState }, sourcePending)} onClick={() => updateApp('installUpdate')}>Install &amp; restart</Button></span></Tooltip> : null}
+              {app.update.status === 'ready' ? <Tooltip title={!idle ? 'Stop and save your recording first' : sourceBusy ? 'Finish changing your capture source first' : 'CamCord will restart after installation'}><span><Button variant="contained" size="small" disabled={!connected || !canInstallUpdate({ ...app, state: currentState }, sourceBusy)} onClick={() => updateApp('installUpdate')}>Install &amp; restart</Button></span></Tooltip> : null}
             </div>
             <span className="field-hint">Updates install when you choose. Stop and save your recording first.</span>
           </section>

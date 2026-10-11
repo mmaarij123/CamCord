@@ -17,7 +17,7 @@ app.setDesktopName('camcord.desktop');
 if(smoke) {app.commandLine.appendSwitch('no-sandbox');app.setPath('userData',process.env.CAMCORD_TEST_DATA);}
 protocol.registerSchemesAsPrivileged([{scheme:'camcord',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 if(!app.requestSingleInstanceLock()) app.quit();
-let window,ready=false,pending=false,folderDialog=false,closing=false,allowClose=false,timer,blocker;
+let window,ready=false,pending=false,folderDialog=false,sourceChanging=false,closing=false,allowClose=false,timer,blocker,lastState='';
 let updateBusy=false,updateManual=false,updateInfo,updateFile,update={status:'idle',message:'Check for updates.',version:'',progress:0};
 let nextCheck=Date.now()+5000;
 const portal=process.env.XDG_SESSION_TYPE==='wayland' || Boolean(process.env.WAYLAND_DISPLAY);
@@ -29,12 +29,13 @@ const recorder=new Recorder({onFailure:message=>{
 }});
 let preferences,preferencesFile,startupFile,startup=false,sources=[],source={kind:'display',id:'',label:'Choose a display',ready:false,width:0,height:0};
 function trusted(event) {return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame.url===APP_URL;}
-function send(notice) {
+function send(notice,force=false) {
   if(!ready || !window || window.isDestroyed()) return;
   const state={type:'state',platform:'linux',state:pending || recorder.state,elapsedSeconds:recorder.elapsedSeconds(),settings:preferences.settings,
     appVersion:version,startupEnabled:startup,update,encoder:recorder.encoder?.label||'',outputFolder:preferences.outputFolder,
     lastOutput:recorder.lastOutput?path.basename(recorder.lastOutput):'',captureExcluded:false,cursorHidden:true,sourceDescription:portal?'Your desktop asks permission and chooses the source when recording starts.':'',
-    captureSource:source,sources:sources.map(({kind,id,label,primary})=>({kind,id,label,primary})),...(notice?{notice}:{})};
+    sourceChanging,captureSource:source,sources:sources.map(({kind,id,label,primary})=>({kind,id,label,primary})),...(notice?{notice}:{})};
+  const signature=JSON.stringify(state);if(!force && signature===lastState)return;lastState=signature;
   window.webContents.send('camcord-state',state);
 }
 async function saveSettings() {await atomicJson(preferencesFile,preferences);}
@@ -92,11 +93,11 @@ async function command(message) {
   if(typeof message!=='string' || message.length>4096)return;
   let data;try {data=JSON.parse(message);} catch{return;}
   if(!data || typeof data.type!=='string' || Array.isArray(data))return;
-  if(data.type==='ready'){ready=true;send();return;}
+  if(data.type==='ready'){ready=true;send(undefined,true);return;}
   if(closing || update.status==='installing') {send();return;}
   if(['checkUpdates','downloadUpdate','installUpdate'].includes(data.type)) {if(data.type!=='downloadUpdate'||update.status==='available')await updateAction(data.type);return;}
   if(data.type==='openOutput'){await shell.openPath(preferences.outputFolder);return;}
-  if(pending || folderDialog){send();return;}
+  if(pending || folderDialog || sourceChanging){send(undefined,true);return;}
   if(data.type==='openLast'){if(recorder.lastOutput)shell.showItemInFolder(recorder.lastOutput);return;}
   if(data.type==='stop' && ['recording','paused'].includes(recorder.state)){await action('saving',async()=>{await recorder.stop();return{severity:'success',text:'Recording saved successfully.'};});return;}
   if(data.type==='pause') {
@@ -112,14 +113,17 @@ async function command(message) {
   } else if(data.type==='startup' && typeof data.enabled==='boolean') {
     await setStartup(startupFile,process.execPath,data.enabled);startup=await startupEnabled(startupFile,process.execPath);
   } else if(data.type==='sourceMode' && ['display','window'].includes(data.kind)) {
-    await refreshSources();
-    const entry=sources.find(item=>item.kind===data.kind);
-    if(data.kind==='display' || portal) {if(entry)select(entry);else source={kind:data.kind,id:'',label:'Choose a display',ready:false};}
-    else source={kind:'window',id:'',label:'Choose a window',ready:false,width:0,height:0};
+    sourceChanging=true;send();
+    try {
+      await refreshSources();
+      const entry=sources.find(item=>item.kind===data.kind);
+      if(data.kind==='display' || portal) {if(entry)select(entry);else source={kind:data.kind,id:'',label:'Choose a display',ready:false};}
+      else source={kind:'window',id:'',label:'Choose a window',ready:false,width:0,height:0};
+    } finally {sourceChanging=false;send(undefined,true);}
   } else if(data.type==='selectSource') {
     const entry=sources.find(item=>item.id===data.id && item.kind===source.kind);
     if(entry)select(entry);else send({severity:'warning',text:'That source is unavailable. Refresh and choose it again.'});
-  } else if(data.type==='refreshSources') {await refreshSources();}
+  } else if(data.type==='refreshSources') {sourceChanging=true;send();try{await refreshSources();}finally{sourceChanging=false;send(undefined,true);}}
   else if(data.type==='chooseOutput') {
     folderDialog=true;
     try {
@@ -135,7 +139,7 @@ async function command(message) {
       preferences.settings=normalizeSettings(preferences.settings,recorder.settings);await saveSettings();
     });
   }
-  send();
+  send(undefined,true);
 }
 
 app.on('second-instance',(_,arguments_)=>{if(!arguments_.includes('--startup') && window){if(window.isMinimized())window.restore();window.show();window.focus();}});
@@ -186,9 +190,13 @@ app.whenReady().then(async()=>{
   },250);
   if(smoke) {
     try {
-      const result=await window.webContents.executeJavaScript(`new Promise((resolve,reject)=>{let count=0;const t=setInterval(()=>{const buttons=[...document.querySelectorAll('.source-mode-picker button')];if(buttons.length===2){clearInterval(t);resolve({buttons:buttons.map(b=>b.textContent),text:document.body.innerText});}else if(++count>100){clearInterval(t);reject(new Error('React UI did not load'));}},50);})`);
+      const result=await window.webContents.executeJavaScript(`new Promise((resolve,reject)=>{let count=0;const t=setInterval(()=>{const buttons=[...document.querySelectorAll('.source-mode-picker button')];const start=[...document.querySelectorAll('button')].find(b=>b.textContent==='Start recording');if(buttons.length===2 && start && !start.disabled){clearInterval(t);resolve({buttons:buttons.map(b=>b.textContent),text:document.body.innerText});}else if(++count>100){clearInterval(t);reject(new Error('React UI/native handshake did not load'));}},50);})`);
       if(result.buttons.join(',')!=='Screen,Window' || !result.text.includes('Launch at login'))throw new Error('Linux UI/platform controls mismatch.');
-      console.log('PASS: packaged React UI, Screen/Window controls, Linux startup copy and isolated bridge');app.exit(0);
+      await window.webContents.executeJavaScript(`document.querySelector('button[aria-label="30 frames per second"]').click()`);
+      let saved=false;
+      for(let index=0;index<50;index++) {await new Promise(resolve=>setTimeout(resolve,50));try{saved=JSON.parse(await readFile(preferencesFile,'utf8')).settings.fps===30;}catch{}if(saved)break;}
+      if(!saved)throw new Error('Linux settings action did not reach the native backend.');
+      console.log('PASS: packaged React UI, native handshake, Screen/Window controls, Linux startup copy and persistent settings action');app.exit(0);
     } catch(error){console.error(error);app.exit(1);}
   }
 }).catch(error=>{console.error(error);app.exit(1);});

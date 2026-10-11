@@ -13,6 +13,7 @@ export const INITIAL_STATE = {
   outputFolder: 'Videos / CamCord Captures',
   lastOutput: '',
   captureExcluded: false,
+  sourceChanging: false,
   captureSource: { kind: 'display', id: 'preview-primary', label: 'Primary display', ready: true, width: 1920, height: 1080 },
   sources: [{ kind: 'display', id: 'preview-primary', label: 'Primary display · 1920 × 1080', primary: true }],
 };
@@ -61,6 +62,7 @@ export function parseStateMessage(data) {
     if (message.notice !== undefined && (!object(message.notice) || typeof message.notice.text !== 'string' ||
       !['success', 'info', 'warning', 'error'].includes(message.notice.severity))) return null;
     if (message.platform !== undefined && !['windows', 'linux'].includes(message.platform)) return null;
+    if (message.sourceChanging !== undefined && typeof message.sourceChanging !== 'boolean') return null;
     if (['outputFolder', 'lastOutput', 'encoder', 'appVersion', 'sourceDescription'].some((key) => message[key] !== undefined && typeof message[key] !== 'string')) return null;
     return message;
   } catch {
