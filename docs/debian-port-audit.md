@@ -8,9 +8,9 @@ Screen and Window are the only capture modes. Resolution presets, bitrate preset
 
 ## Automated evidence
 
-GitHub Actions run [38155430407](https://github.com/mmaarij123/CamCord/actions/runs/38155430407) passed the Debian build and integration gates on October 11, 2026:
+GitHub Actions run [38155907725](https://github.com/mmaarij123/CamCord/actions/runs/38155907725) passed the Debian build and integration gates on October 11, 2026:
 
-- Core tests: bounded fragmented-frame buffers, shared bitrate flags, strict settings, Unicode folders, atomic preferences, isolated opt-in startup, stable release metadata and cached update hash/tamper checks.
+- Core tests: bounded fragmented-frame buffers, shared bitrate flags, strict settings, Unicode folders, atomic preferences, isolated opt-in startup, stable release metadata, cached/streamed update hash checks, oversize/tamper rejection and cancelled-partial cleanup.
 - Actual X11 capture: changing an owned window behind another window, pause/resume, system audio plus microphone, audible tone with leading silence, full MP4 decoding, source-close recovery, stale-source rejection and display capture.
 - Isolated ScreenCast D-Bus fixture: screen/window types, hidden cursor, request routing/cancellation, Unix file descriptor handoff and portal v6 stable PipeWire serial targeting.
 - Publication: no-overwrite atomic rename fallback, output collisions, apostrophe paths and retained corrupt media for recovery.
@@ -20,6 +20,8 @@ GitHub Actions run [38155430407](https://github.com/mmaarij123/CamCord/actions/r
 The disposable CI container uses a virtual desktop and virtual audio devices, never a user's screen or microphone. Its root-only Electron smoke invocation explicitly disables the sandbox; the installed production application does not do this. The package installs the standard root-owned mode-4755 Electron sandbox helper and is intended to run as a normal user.
 
 The tag release pipeline repeats these Linux gates and Windows validation, UI, settings, branding, all-bitrate synthetic encoding, source, recording recovery, startup/updater and native lifecycle tests before publication.
+
+Shared UI tests pass locally (14 tests). Browser fixture checks at 1040×740, 760×600 and 360×640 found no horizontal overflow; Linux/Windows startup text, portal instructions and source-change control locking were checked. These fixtures verify UI behavior, not physical-device capture. Production npm dependency audits reported no known advisories at the time of verification; this is not a guarantee against undiscovered vulnerabilities.
 
 ## Fixes found during implementation
 
