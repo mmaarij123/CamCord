@@ -31,6 +31,14 @@ CamCord statically links the WebView2 SDK loader from **Microsoft.Web.WebView2 1
 - SDK: https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3485.44
 - Runtime and terms: https://developer.microsoft.com/microsoft-edge/webview2/
 
+## Debian runtime and system dependencies
+
+The Debian package bundles **Electron 44.7.0**, including Chromium and Node.js. Electron's original `LICENSE` and `LICENSES.chromium.html` are shipped in `/opt/camcord/`; the shared application's original license and frontend notices are in `/opt/camcord/resources/app/`. Electron uses the MIT License; Chromium, Node.js and their dependencies retain the licenses identified in those bundled notices.
+
+- Electron source and notices: https://github.com/electron/electron/tree/v44.7.0
+
+The Debian package does not bundle FFmpeg, Python, PyGObject, GStreamer, PipeWire, PulseAudio or the desktop portal services. APT installs these as separate Debian system packages. They retain their upstream licenses and Debian copyright/source records, available under `/usr/share/doc/<package>/copyright` and through Debian's source packages. The Windows-specific FFmpeg build and WebView2 loader described above are not shipped in the Debian package.
+
 ## JSON for Modern C++
 
 The native update checker uses nlohmann/json 3.12.0 under the MIT License, copyright Niels Lohmann and contributors. Its original license is shipped as `licenses/nlohmann-json-MIT.txt`.

@@ -60,6 +60,8 @@ test('download hash/cache verification rejects tampering',async t=>{
   const file=path.join(cache,ASSET_NAME);await writeFile(file,'abc');await verifyUpdate(info,file);assert.equal(await sha256(file),info.sha256);
   const updater=new Updater(root,{fetcher:()=>{throw new Error('Cache should not request the network');}});
   assert.equal(await updater.download(info),file);await writeFile(file,'bad');await assert.rejects(verifyUpdate(info,file));
+  await assert.rejects(updater.download({...info,url:'https://example.com/untrusted.deb'}),/Invalid update metadata/);
+  await assert.rejects(updater.download({...info,size:1024**3}),/Invalid update metadata/);
 });
 
 const ffmpeg=process.env.FFMPEG_PATH || (process.platform==='win32'?fileURLToPath(new URL('../../third_party/ffmpeg/ffmpeg.exe',import.meta.url)):'ffmpeg');

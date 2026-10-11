@@ -27,9 +27,12 @@ export function parseRelease(release,current) {
 export async function sha256(file) {
   const hash=createHash('sha256');for await(const bytes of createReadStream(file)) hash.update(bytes);return hash.digest('hex');
 }
-export async function verifyUpdate(info,file) {
+function validateUpdate(info) {
   if(!info || !versionParts(info.version) || info.url!==`${RELEASE_BASE}v${info.version}/${ASSET_NAME}` || !/^[a-f0-9]{64}$/.test(info.sha256) ||
     !Number.isSafeInteger(info.size) || info.size<=0 || info.size>512*1024*1024) throw new Error('Invalid update metadata.');
+}
+export async function verifyUpdate(info,file) {
+  validateUpdate(info);
   const data=await stat(file);
   if(!data.isFile() || data.size!==info.size || await sha256(file)!==info.sha256) throw new Error('The downloaded package failed SHA-256 verification. Download it again.');
 }
@@ -46,6 +49,7 @@ export class Updater {
     return parseRelease(JSON.parse(text),current);
   }
   async download(info) {
+    validateUpdate(info);
     this.controller=new AbortController();
     const folder=path.join(this.folder,info.version);
     if(!versionParts(info.version) || !/^\d+\.\d+\.\d+$/.test(info.version))throw new Error('Invalid update version.');
