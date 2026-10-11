@@ -31,6 +31,9 @@ test('real X11 window updates under occlusion; pause, audio, source loss and rec
   const settings={...DEFAULT_SETTINGS,height:480,fps:30,bitrateMbps:8,systemAudio:true,microphone:true};
   await recorder.start(settings,root,source,false);await sleep(500);
   fixture.stdin.write('cover\ngreen\n');await sleep(1200);
+  const center=(Math.floor(recorder.settings.height/2)*recorder.settings.width+Math.floor(recorder.settings.width/2))*4;
+  console.log(`Latest unencoded fixture pixel: ${[...recorder.latest.subarray(center,center+4)]}; encoder frames ${recorder.framesWritten}`);
+  assert.ok(recorder.latest[center+1]>100,'Selected window surface stopped updating behind the cover');
   await recorder.pause();assert.equal(recorder.state,'paused');
   const pixel=path.join(root,'last.rgb');
   await run('ffmpeg',['-y','-hide_banner','-loglevel','error','-sseof','-0.2','-i',recorder.segments[0],'-frames:v','1','-vf','scale=1:1','-pix_fmt','rgb24','-f','rawvideo',pixel]);

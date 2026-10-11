@@ -21,9 +21,9 @@ REQUEST = '<node><interface name="org.freedesktop.portal.Request"><method name="
 def service():
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     loop = GLib.MainLoop(); sessions = {}
-    def close(_, sender, object_path, interface, method, parameters, invocation, *_):
+    def close(connection, sender, object_path, interface, method, parameters, invocation, *user_data):
         invocation.return_value(None)
-    def call(_, sender, object_path, interface, method, parameters, invocation, *_):
+    def call(connection, sender, object_path, interface, method, parameters, invocation, *user_data):
         args = parameters.unpack(); options = args[-1]
         if method == 'OpenPipeWireRemote':
             read, write = os.pipe(); os.write(write, b'portal-test'); os.close(write)

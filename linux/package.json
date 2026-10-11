@@ -9,7 +9,7 @@
   "description": "CamCord screen and window recorder for Debian",
   "scripts": {
     "prepare:shared": "node scripts/prepare-shared.mjs",
-    "pretest": "npm run prepare:shared",
+    "pretest": "npm run prepare:shared && node scripts/check-python.mjs",
     "test": "node --test tests/*.test.mjs",
     "package": "node scripts/package.mjs"
   },

@@ -280,7 +280,7 @@ class Portal:
         token = 'camcord_' + uuid.uuid4().hex
         options['handle_token'] = self.GLib.Variant('s', token)
         loop = self.GLib.MainLoop(); result = {}; request_path = [None]
-        def response(_, sender, object_path, interface, name, parameters, *_):
+        def response(connection, sender, object_path, interface, name, parameters, *user_data):
             if object_path == request_path[0]:
                 code, data = parameters.unpack(); result.update(code=code, data=data); loop.quit()
         subscription = self.bus.signal_subscribe(self.destination, 'org.freedesktop.portal.Request', 'Response',
