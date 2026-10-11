@@ -56,9 +56,21 @@ test('malformed nested host state cannot crash source controls or alerts', () =>
   for (const fields of [{ sources: [null] }, { sources: [{}] }, { sources: {} },
     { captureSource: [] }, { captureSource: { ready: 'yes' } }, { settings: { microphone: {} } },
     { update: { message: {} } }, { notice: { text: {}, severity: 'error' } },
-    { notice: { text: 'bad', severity: 'invalid' } }, { outputFolder: {} }]) {
+    { notice: { text: 'bad', severity: 'invalid' } }, { outputFolder: {} }, { platform: 'unknown' },
+    { sourceChanging: 'yes' }, { portalCapture: 1 }, { sourceDescription: {} }]) {
     assert.equal(parseStateMessage({ type: 'state', state: 'idle', ...fields }), null);
   }
   assert.ok(parseStateMessage({ type: 'state', state: 'idle', sources: [], captureSource: { kind: 'window', ready: false },
     notice: { text: 'Choose a source', severity: 'warning' } }));
+});
+
+test('Linux portal state survives partial updates without changing the shared recording preferences', () => {
+  const linux = mergeState(INITIAL_STATE, parseStateMessage({ type: 'state', state: 'idle', platform: 'linux',
+    portalCapture: true, sourceChanging: true, sourceDescription: 'System permission picker' }));
+  const next = mergeState(linux, { type: 'state', state: 'idle', elapsedSeconds: 0 });
+  assert.equal(next.platform, 'linux');
+  assert.equal(next.portalCapture, true);
+  assert.equal(next.sourceChanging, true);
+  assert.equal(next.sourceDescription, 'System permission picker');
+  assert.deepEqual(next.settings, INITIAL_STATE.settings);
 });

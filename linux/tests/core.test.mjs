@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, mkdir, stat, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, mkdir, stat, rm, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +62,20 @@ test('download hash/cache verification rejects tampering',async t=>{
   assert.equal(await updater.download(info),file);await writeFile(file,'bad');await assert.rejects(verifyUpdate(info,file));
   await assert.rejects(updater.download({...info,url:'https://example.com/untrusted.deb'}),/Invalid update metadata/);
   await assert.rejects(updater.download({...info,size:1024**3}),/Invalid update metadata/);
+});
+test('streamed updates verify bytes, reject excess data and clean cancelled partial downloads',async t=>{
+  const root=await fixture(t),info=parseRelease(release(),'1.7.0'),progress=[];
+  const updater=new Updater(root,{onProgress:value=>progress.push(value),fetcher:async()=>({ok:true,url:info.url,
+    body:(async function*(){yield Buffer.from('a');yield Buffer.from('bc');})()})});
+  const file=await updater.download(info);assert.equal(await readFile(file,'utf8'),'abc');assert.equal(progress.at(-1),100);
+  await rm(file);
+  updater.fetcher=async()=>({ok:true,url:info.url,body:(async function*(){yield Buffer.from('abcd');})()});
+  await assert.rejects(updater.download(info),/expected size/);
+  updater.fetcher=async()=>({ok:true,url:info.url,body:(async function*(){yield Buffer.from('bad');})()});
+  await assert.rejects(updater.download(info),/SHA-256/);
+  updater.fetcher=async()=>({ok:true,url:info.url,body:(async function*(){yield Buffer.from('abc');updater.cancel();})()});
+  await assert.rejects(updater.download(info),/cancelled/);
+  assert.deepEqual(await readdir(path.join(root,info.version)),[]);
 });
 
 const ffmpeg=process.env.FFMPEG_PATH || (process.platform==='win32'?fileURLToPath(new URL('../../third_party/ffmpeg/ffmpeg.exe',import.meta.url)):'ffmpeg');
