@@ -20,6 +20,7 @@ dbus-run-session -- bash -euo pipefail -c '
   export CAMCORD_DESKTOP_TEST=1
   cd linux
   npm test
+  python3 tests/portal_test.py
   export CAMCORD_SMOKE_TEST=1 CAMCORD_TEST_DATA=/tmp/camcord-ui-smoke
   /opt/camcord/camcord --smoke-test
 '
