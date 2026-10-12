@@ -95,7 +95,7 @@ OperationResult CaptureEngine::Start(const std::wstring& ffmpeg, const std::wstr
             + QuoteArg(log + L".csv") : L" -movflags +frag_keyframe+empty_moov+default_base_moof -flush_packets 1") + L" " + QuoteArg(output);
     if (!process_.Start(ffmpeg, encoderArgs, log, true, nullptr, true)) { bridge_.reset(); return OperationResult::Failure(L"The video encoder could not be started."); }
     startedAt_ = std::chrono::steady_clock::now();
-    stream->writer = std::thread([this, stream, frameBytes, fps = settings.fps] {
+    stream->writer = std::thread([this, stream, frameBytes, fps = settings.fps, rolling] {
         try {
             const auto interval = std::chrono::nanoseconds(1000000000ll / fps);
             auto next = std::chrono::steady_clock::now();
@@ -106,6 +106,9 @@ OperationResult CaptureEngine::Start(const std::wstring& ffmpeg, const std::wstr
                 if (frame && !process_.WriteInput(frame->data(), frameBytes, &stream->cancelWrite)) { stream->failed = true; break; }
                 stream->writeStarted = 0;
                 next += interval;
+                // Replay must not silently drift minutes behind the hotkey clock
+                // on overloaded hardware. Normal recording behavior is unchanged.
+                if(rolling && std::chrono::steady_clock::now()-next>std::chrono::seconds(5)){stream->failed=true;break;}
                 std::unique_lock lock(stream->mutex);
                 stream->changed.wait_until(lock, next, [stream] { return stream->stopping.load() || stream->failed.load(); });
             }
