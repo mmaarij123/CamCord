@@ -35,18 +35,21 @@ int wmain(int argc,wchar_t** argv) {
         WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_PCM;format.nChannels=1;format.nSamplesPerSec=16000;format.wBitsPerSample=16;format.nBlockAlign=2;format.nAvgBytesPerSec=32000;
         AudioFiles audio;Check(audio.Open((root/L"rolling").wstring(),&format,true),"Rolling PCM open failed");Check(audio.Silence(9ull*32000)&&audio.Close(),"PCM splitting failed");
         for(int i=0;i<5;i++){std::wostringstream name;name<<L"rolling_"<<std::setfill(L'0')<<std::setw(9)<<i<<L".wav";Check(fs::exists(root/(name.str()+L".done"))&&fs::file_size(root/name.str())>=32000,"Closed PCM chunk truncated");}
-        std::cout<<"PASS: strict replay preferences/hotkeys and continuous PCM splitting\n";
+        std::cout<<"PASS: strict replay preferences/hotkeys and continuous PCM splitting"<<std::endl;
         OutputManager folders;folders.SetCaptureFolder(root.wstring());std::vector<std::future<std::wstring>> jobs;
         for(int i=0;i<40;i++)jobs.push_back(std::async(std::launch::async,[&folders]{return folders.NewSessionFolder();}));
         std::set<std::wstring> unique;for(auto& job:jobs){const auto folder=job.get();Check(!folder.empty(),"Concurrent session creation failed");unique.insert(folder);}
         Check(unique.size()==40,"Manual recording and clip sessions collided");
+        std::cout<<"PASS: 40 concurrent recording/clip session directories are exclusive"<<std::endl;
         run(L"-f lavfi -i color=c=blue:s=160x90:r=15 -vf "+QuoteArg(L"drawbox=color=red:t=fill:enable='gte(t,308)'")+L" -t 310 -an -c:v libx264 -preset ultrafast -g 30 -bf 0 -f segment -segment_time 2 -segment_format matroska -reset_timestamps 1 -segment_list_type csv -segment_list_size 162 -segment_list "+QuoteArg((session/L"video.log.csv").wstring())+L" "+QuoteArg((session/L"video_%09d.mkv").wstring()),L"generate.log");
         const auto tone=root/L"tone.wav";run(L"-f lavfi -i sine=frequency=660:sample_rate=48000 -t 2 -c:a pcm_s16le -ac 2 -rf64 always "+QuoteArg(tone.wstring()),L"tone.log");
         for(const auto* prefix:{L"system",L"mic"})for(int i=0;i<155;i++){std::wostringstream name;name<<prefix<<L"_"<<std::setfill(L'0')<<std::setw(9)<<i<<L".wav";fs::create_hard_link(tone,session/name.str());std::ofstream marker(session/(name.str()+L".done"));}
         ReplayManager replay;ReplayTestAccess::Setup(replay,session,root,ffmpeg);std::vector<std::wstring> outputs;
         for(int seconds:{300,240,180,120,90,60,30}) {
+            std::cout<<"Testing native "<<seconds<<"-second replay export"<<std::endl;
             ReplayTestAccess::Seconds(replay,seconds);auto result=replay.SaveClip(307.4);if(!result.ok)std::wcerr<<result.message<<L'\n';Check(result.ok,"Native clip save failed");outputs.push_back(replay.LastOutput());
             const auto pcm=root/L"duration.pcm";run(L"-xerror -i "+QuoteArg(outputs.back())+L" -map 0:a:0 -ar 8000 -ac 1 -f s16le "+QuoteArg(pcm.wstring()),L"decode.log");Check(std::abs(static_cast<double>(fs::file_size(pcm))/16000-seconds)<0.15,"Clip duration mismatch");
+            std::cout<<"PASS: "<<seconds<<"-second export and audio decode"<<std::endl;
         }
         Check(std::set<std::wstring>(outputs.begin(),outputs.end()).size()==7,"Clips overwrite one another");
         const auto pixel=root/L"last.rgb";run(L"-sseof -0.2 -i "+QuoteArg(outputs.back())+L" -frames:v 1 -vf scale=1:1 -pix_fmt rgb24 -f rawvideo "+QuoteArg(pixel.wstring()),L"pixel.log");std::ifstream rgb(pixel,std::ios::binary);unsigned char bytes[3]{};rgb.read(reinterpret_cast<char*>(bytes),3);Check(bytes[2]>150&&bytes[0]<60,"Clip contains post-hotkey frames");
