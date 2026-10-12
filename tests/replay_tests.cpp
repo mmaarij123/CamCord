@@ -16,6 +16,7 @@ struct ReplayTestAccess {
         r.session_=session.wstring();r.ffmpeg_=ffmpeg;r.output_.SetCaptureFolder(root.wstring());
         r.settings_.width=160;r.settings_.height=480;r.settings_.fps=15;r.settings_.bitrateMbps=2;r.settings_.systemAudio=true;r.settings_.microphone=true;
         r.stopping_=false;r.healthy_=true;r.began_=std::chrono::steady_clock::now()-std::chrono::milliseconds(307400);
+        r.exportTimeout_=120000;
     }
     static void Seconds(ReplayManager& r,int value){r.settings_.replaySeconds=value;}
     static void Prune(ReplayManager& r){r.Prune();}
@@ -47,7 +48,10 @@ int wmain(int argc,wchar_t** argv) {
         ReplayManager replay;ReplayTestAccess::Setup(replay,session,root,ffmpeg);std::vector<std::wstring> outputs;
         for(int seconds:{300,240,180,120,90,60,30}) {
             std::cout<<"Testing native "<<seconds<<"-second replay export"<<std::endl;
-            ReplayTestAccess::Seconds(replay,seconds);auto result=replay.SaveClip(307.4);if(!result.ok)std::wcerr<<result.message<<L'\n';Check(result.ok,"Native clip save failed");outputs.push_back(replay.LastOutput());
+            ReplayTestAccess::Seconds(replay,seconds);auto result=replay.SaveClip(307.4);
+            if(!result.ok){std::wcerr<<result.message<<L'\n';for(const auto& entry:fs::directory_iterator(root/L".camcord-sessions"))for(const auto* name:{L"audio-mix.log",L"clip.log"}){
+                std::ifstream log(entry.path()/name,std::ios::binary);if(log){std::ostringstream text;text<<log.rdbuf();const auto value=text.str();std::cerr<<value.substr(value.size()>4000?value.size()-4000:0)<<std::endl;}}}
+            Check(result.ok,"Native clip save failed");outputs.push_back(replay.LastOutput());
             const auto pcm=root/L"duration.pcm";run(L"-xerror -i "+QuoteArg(outputs.back())+L" -map 0:a:0 -ar 8000 -ac 1 -f s16le "+QuoteArg(pcm.wstring()),L"decode.log");Check(std::abs(static_cast<double>(fs::file_size(pcm))/16000-seconds)<0.15,"Clip duration mismatch");
             std::cout<<"PASS: "<<seconds<<"-second export and audio decode"<<std::endl;
         }

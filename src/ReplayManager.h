@@ -33,4 +33,5 @@ private:
     std::thread maintenance_;
     std::mutex files_;
     bool retain_ = false;
+    DWORD exportTimeout_ = INFINITE; // bounded only by the owned synthetic fixture
 };

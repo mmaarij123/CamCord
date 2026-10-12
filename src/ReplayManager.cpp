@@ -136,16 +136,28 @@ OperationResult ReplayManager::SaveClip(double end) {
             if(settings_.systemAudio)audio(L"system",systemOffset_);if(settings_.microphone)audio(L"mic",micOffset_);
         }
         const auto staging=(fs::path(job)/L"finished.mp4").wstring(),log=(fs::path(job)/L"clip.log").wstring();
-        auto args=L"-y -hide_banner -loglevel error -xerror -ss "+Number(std::max(0.0,start-first))+L" -f concat -safe 0 -i "+QuoteArg((fs::path(job)/L"video.txt").wstring())+audioArgs+L" -t "+Number(end-start)+L" -map 0:v:0";
-        if(audioCount==1)args+=L" -map 1:a:0 -af "+QuoteArg(L"aresample=48000:async=1:first_pts=0,apad");
-        if(audioCount==2)args+=L" -filter_complex "+QuoteArg(L"[1:a][2:a]amix=inputs=2:duration=longest:dropout_transition=2,aresample=48000:async=1:first_pts=0,apad[a]")+L" -map "+QuoteArg(L"[a]");
+        const auto mixed=(fs::path(job)/L"audio.wav").wstring();
+        if(audioCount) {
+            // Finish a finite PCM mix before video export. Replay chunks already
+            // contain clock-aligned silence; an infinite apad here can stall the
+            // multi-input scheduler at a fractional concat seek on FFmpeg 9.
+            auto mix=L"-y -hide_banner -loglevel error -xerror"+audioArgs;
+            if(audioCount==1)mix+=L" -map 0:a:0 -af "+QuoteArg(L"aresample=48000:async=1:first_pts=0");
+            else mix+=L" -filter_complex "+QuoteArg(L"[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,aresample=48000:async=1:first_pts=0[a]")+L" -map "+QuoteArg(L"[a]");
+            mix+=L" -t "+Number(end-start)+L" -c:a pcm_s16le -ar 48000 -ac 2 -rf64 always "+QuoteArg(mixed);
+            if(ChildProcess::Run(ffmpeg_,mix,(fs::path(job)/L"audio-mix.log").wstring(),exportTimeout_)!=0)throw std::runtime_error("Clip audio mixing failed");
+        }
+        auto args=L"-y -hide_banner -loglevel error -xerror -ss "+Number(std::max(0.0,start-first))+L" -f concat -safe 0 -i "+QuoteArg((fs::path(job)/L"video.txt").wstring());
+        if(audioCount)args+=L" -i "+QuoteArg(mixed);
+        args+=L" -t "+Number(end-start)+L" -map 0:v:0";
+        if(audioCount)args+=L" -map 1:a:0";
         // Re-encode to trim accurately to the hotkey time rather than a 2-second keyframe boundary.
         args+=VideoEncodingArguments(settings_,{L"libx264",L"Software H.264",false}).substr(4);
         if(audioCount)args+=L" -c:a aac -b:a 192k -ar 48000 -ac 2";else args+=L" -an";
         args+=L" -movflags +faststart "+QuoteArg(staging);
         // Healthy 5-minute exports can take longer than the process helper's
         // default 30 seconds. The asynchronous worker keeps the UI responsive.
-        if(ChildProcess::Run(ffmpeg_,args,log,INFINITE)!=0)throw std::runtime_error("Clip encoding failed");
+        if(ChildProcess::Run(ffmpeg_,args,log,exportTimeout_)!=0)throw std::runtime_error("Clip encoding failed");
         const auto clip=(fs::path(output_.CaptureFolder())/(L"CamCord_Clip_"+fs::path(job).filename().wstring()+L".mp4")).wstring();
         if(!MoveFileExW(staging.c_str(),clip.c_str(),MOVEFILE_WRITE_THROUGH))throw std::runtime_error("Clip publication failed");
         lastOutput_=clip;std::error_code ec;fs::remove_all(job,ec);return OperationResult::Success(L"Clip saved: "+fs::path(clip).filename().wstring());

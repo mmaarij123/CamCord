@@ -77,11 +77,20 @@ export class Replay extends Recorder {
     } catch(error){throw new Error(`${error.message}\nRecovery files: ${job||this.session}`);}
     finally{for(const chunks of chosen)for(const chunk of chunks)this.pinned.delete(chunk.file);}
     try {
+      const mixed=path.join(job,'audio.wav');
+      if(audio.length) {
+        const mix=['-y','-hide_banner','-loglevel','error','-xerror'];
+        for(let index=1;index<snapshots.length;index++)mix.push('-ss',String(Math.max(0,start+this.audioOffset-chosen[index][0].start)),'-f','concat','-safe','0','-i',snapshots[index]);
+        if(audio.length===1)mix.push('-map','0:a:0','-af','aresample=48000:async=1:first_pts=0');
+        else mix.push('-filter_complex','[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,aresample=48000:async=1:first_pts=0[a]','-map','[a]');
+        mix.push('-t',String(end-start),'-c:a','pcm_s16le','-ar','48000','-ac','2','-rf64','always',mixed);
+        await run(this.ffmpeg,mix,{timeout:24*60*60*1000});
+      }
       const args=['-y','-hide_banner','-loglevel','error','-xerror'];
-      for(const [index,list]of snapshots.entries())args.push('-ss',String(Math.max(0,start+(index?this.audioOffset:0)-chosen[index][0].start)),'-f','concat','-safe','0','-i',list);
+      args.push('-ss',String(Math.max(0,start-chosen[0][0].start)),'-f','concat','-safe','0','-i',snapshots[0]);
+      if(audio.length)args.push('-i',mixed);
       args.push('-t',String(end-start),'-map','0:v:0');
-      if(audio.length===1)args.push('-map','1:a:0','-af','aresample=48000:async=1:first_pts=0,apad');
-      if(audio.length===2)args.push('-filter_complex','[1:a][2:a]amix=inputs=2:duration=longest:dropout_transition=2,aresample=48000:async=1:first_pts=0,apad[a]','-map','[a]');
+      if(audio.length)args.push('-map','1:a:0');
       args.push(...encodingArgs(this.settings,{name:'libx264'}));
       if(audio.length)args.push('-c:a','aac','-b:a','192k','-ar','48000','-ac','2');else args.push('-an');
       const finished=path.join(job,'finished.mp4');args.push('-movflags','+faststart',finished);
