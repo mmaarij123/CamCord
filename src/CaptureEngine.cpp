@@ -39,7 +39,7 @@ bool CaptureEngine::Running() const {
 }
 
 OperationResult CaptureEngine::Start(const std::wstring& ffmpeg, const std::wstring& output, const std::wstring& log,
-    const RecordingSettings& settings, const EncoderChoice& encoder) {
+    const RecordingSettings& settings, const EncoderChoice& encoder, bool rolling) {
     if (process_.Running()) return OperationResult::Failure(L"A recording is already running.");
     if (settings.width < 16 || settings.height < 16 || settings.width > 7680 || settings.height > 4320 ||
         settings.fps <= 0 || settings.fps > 120) return OperationResult::Failure(L"Unsupported recording size or frame rate.");
@@ -88,9 +88,11 @@ OperationResult CaptureEngine::Start(const std::wstring& ffmpeg, const std::wstr
         }
     }
     const auto dimensions = std::to_wstring(settings.width) + L"x" + std::to_wstring(settings.height);
-    const auto encoderArgs = L"-y -hide_banner -loglevel warning -f rawvideo -pixel_format bgra -video_size " + dimensions
+    auto encoderArgs = L"-y -hide_banner -loglevel warning -f rawvideo -pixel_format bgra -video_size " + dimensions
         + L" -framerate " + std::to_wstring(settings.fps) + L" -i pipe:0" + VideoEncodingArguments(settings, encoder)
-        + L" -movflags +frag_keyframe+empty_moov+default_base_moof -flush_packets 1 " + QuoteArg(output);
+        + (rolling ? L" -bf 0 -force_key_frames " + QuoteArg(L"expr:gte(t,n_forced*2)")
+            + L" -f segment -segment_time 2 -segment_format matroska -reset_timestamps 1 -segment_list_type csv -segment_list_size 162 -segment_list "
+            + QuoteArg(log + L".csv") : L" -movflags +frag_keyframe+empty_moov+default_base_moof -flush_packets 1") + L" " + QuoteArg(output);
     if (!process_.Start(ffmpeg, encoderArgs, log, true, nullptr, true)) { bridge_.reset(); return OperationResult::Failure(L"The video encoder could not be started."); }
     startedAt_ = std::chrono::steady_clock::now();
     stream->writer = std::thread([this, stream, frameBytes, fps = settings.fps] {

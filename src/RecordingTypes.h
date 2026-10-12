@@ -21,6 +21,8 @@ struct RecordingSettings {
     bool systemAudio = true;
     bool microphone = false;
     bool autoCheckUpdates = true;
+    int replaySeconds = 60;
+    std::wstring replayHotkey = L"Ctrl+Shift+F8";
     std::wstring outputFolder;
     CaptureTarget captureTarget; // Session-only: never persist/reuse window handles across restarts.
 };

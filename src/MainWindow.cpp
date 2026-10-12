@@ -21,6 +21,7 @@ constexpr UINT WM_CHOOSE_FOLDER = WM_APP + 1;
 constexpr UINT WM_FATAL_ERROR = WM_APP + 2;
 constexpr UINT WM_INSTALL_UPDATE = WM_APP + 3;
 constexpr UINT WM_SOURCE_DESTROYED = WM_APP + 5;
+constexpr int REPLAY_HOTKEY_ID = 1708;
 HWND sourceEventWindow = nullptr;
 constexpr wchar_t APP_URL[] = L"https://app.camcord/index.html";
 
@@ -235,6 +236,7 @@ void MainWindow::SendState(bool force) {
     json << L"{\"type\":\"state\",\"state\":\"" << state << L"\",\"elapsedSeconds\":" << elapsedSeconds_
         << L",\"settings\":{\"height\":" << settings_.height << L",\"fps\":" << settings_.fps
         << L",\"bitrateMbps\":" << settings_.bitrateMbps
+        << L",\"replaySeconds\":" << settings_.replaySeconds << L",\"replayHotkey\":\"" << JsonEscape(settings_.replayHotkey) << L"\""
         << L",\"systemAudio\":" << (settings_.systemAudio ? L"true" : L"false")
         << L",\"microphone\":" << (settings_.microphone ? L"true" : L"false")
         << L",\"autoCheckUpdates\":" << (settings_.autoCheckUpdates ? L"true" : L"false")
@@ -259,6 +261,9 @@ void MainWindow::SendState(bool force) {
             << L"\",\"label\":\"" << JsonEscape(entry.target.label) << L"\",\"primary\":" << (entry.primary ? L"true" : L"false") << L"}";
     }
     json << L"]";
+    json << L",\"replay\":{\"enabled\":" << (replayEnabled_?L"true":L"false") << L",\"busy\":" << (!replayPending_.empty()?L"true":L"false")
+        << L",\"saving\":" << (replayPending_==L"saveClip"?L"true":L"false") << L",\"bufferedSeconds\":" << replay_.Buffered()
+        << L",\"message\":\"" << JsonEscape(replayMessage_) << L"\",\"lastClip\":\"" << JsonEscape(lastClip_.empty()?L"":std::filesystem::path(lastClip_).filename().wstring()) << L"\"}";
     if (!noticeText_.empty()) json << L",\"notice\":{\"severity\":\"" << JsonEscape(noticeSeverity_)
         << L"\",\"text\":\"" << JsonEscape(noticeText_) << L"\"}";
     json << L"}";
@@ -339,7 +344,7 @@ void MainWindow::PollAction() {
 
 void MainWindow::BeginUpdate(UpdateAction action, bool manual) {
     if (updateAction_ != UpdateAction::None || closeRequested_) return;
-    if (action == UpdateAction::Verify && !UpdateManager::CanInstall(snapshotState_, pending_ != Action::None,
+    if (action == UpdateAction::Verify && !UpdateManager::CanInstall(snapshotState_, pending_ != Action::None || replayEnabled_ || !replayPending_.empty(),
         folderDialogOpen_, updateStatus_ == L"ready")) {
         SetNotice(L"info", L"Stop and save your recording before installing an update."); SendState(); return;
     }
@@ -406,7 +411,7 @@ void MainWindow::PollUpdate() {
 }
 
 void MainWindow::InstallUpdate() {
-    if (closeRequested_ || !UpdateManager::CanInstall(snapshotState_, pending_ != Action::None,
+    if (closeRequested_ || !UpdateManager::CanInstall(snapshotState_, pending_ != Action::None || replayEnabled_ || !replayPending_.empty(),
         folderDialogOpen_, updateStatus_ == L"installing")) return;
     const auto folder = ExecutableDirectory();
     const auto parameters = L"/SP- /SILENT /NORESTART /CAMCORDUPDATE=1 /DIR=" + QuoteArg(folder);
@@ -422,7 +427,7 @@ void MainWindow::InstallUpdate() {
 }
 
 void MainWindow::ChooseOutputFolder() {
-    if (pending_ != Action::None || snapshotState_ != RecorderState::Idle || folderDialogOpen_ || closeRequested_ ||
+    if (pending_ != Action::None || replayEnabled_ || !replayPending_.empty() || snapshotState_ != RecorderState::Idle || folderDialogOpen_ || closeRequested_ ||
         updateStatus_ == L"installing") return;
     folderDialogOpen_ = true;
     ComPtr<IFileOpenDialog> dialog;
@@ -469,7 +474,15 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         if (!outputFolder_.empty()) ShellExecuteW(hwnd_, L"open", outputFolder_.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         return;
     }
+    if (type == L"openClip") {
+        if(!lastClip_.empty())ShellExecuteW(hwnd_,L"open",L"explorer.exe",(L"/select,"+QuoteArg(lastClip_)).c_str(),nullptr,SW_SHOWNORMAL);
+        return;
+    }
+    if(type==L"replayEnabled") {BeginReplay(request.Boolean("enabled",false)?L"enable":L"disable");return;}
+    if(type==L"saveClip") {BeginReplay(L"saveClip");return;}
     if (pending_ != Action::None || folderDialogOpen_) { SendState(true); return; }
+    if(type==L"start"&&!replayPending_.empty()&&replayPending_!=L"saveClip"){SendState(true);return;}
+    if((replayEnabled_||!replayPending_.empty()) && type!=L"start" && type!=L"pause" && type!=L"stop" && type!=L"openLast") {SendState(true);return;}
     if (snapshotState_ == RecorderState::Idle && type == L"refreshSources") { RefreshSources(); SendState(true); }
     else if (snapshotState_ == RecorderState::Idle && type == L"sourceMode") {
         const auto kind = request.String("kind");
@@ -508,7 +521,7 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         SendState(true);
     } else if (type == L"start" && snapshotState_ == RecorderState::Idle) {
         if (selectionInvalid_) { SetNotice(L"warning", L"The source changed or closed. Select it again before recording."); SendState(true); return; }
-        settings_ = request.Settings(settings_); SaveSettings(); BeginAction(Action::Start);
+        if(!replayEnabled_)settings_ = request.Settings(settings_); SaveSettings(); BeginAction(Action::Start);
     } else if (type == L"pause") {
         if (snapshotState_ == RecorderState::Recording) BeginAction(Action::Pause);
         else if (snapshotState_ == RecorderState::Paused) BeginAction(Action::Resume);
@@ -547,6 +560,7 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (wParam == TIMER_RECORDING) {
             PollAction();
             if (!IsWindow(hwnd_)) return 0;
+            PollReplay();
             PollUpdate();
             if (pending_ == Action::None) {
                 UpdateSnapshot();
@@ -563,6 +577,7 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         return 0;
     case WM_CHOOSE_FOLDER: ChooseOutputFolder(); return 0;
+    case WM_HOTKEY: if(wParam==REPLAY_HOTKEY_ID)BeginReplay(L"saveClip");return 0;
     case WM_SOURCE_DESTROYED:
         if (settings_.captureTarget.kind == CaptureKind::Window && settings_.captureTarget.handle == static_cast<unsigned long long>(wParam) &&
             static_cast<LONG>(static_cast<DWORD>(lParam) - sourceSelectedAt_) >= 0) {
@@ -579,9 +594,13 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         PostMessageW(hwnd_, WM_CLOSE, 0, 0);
         return 0;
     case WM_QUERYENDSESSION:
-        return pending_ == Action::None && snapshotState_ == RecorderState::Idle && !folderDialogOpen_;
+        return pending_ == Action::None && snapshotState_ == RecorderState::Idle && !folderDialogOpen_ && !replayEnabled_ && replayPending_.empty();
     case WM_CLOSE:
         updater_.Cancel();
+        if(replayEnabled_ || !replayPending_.empty()) {
+            closeRequested_=true;SetNotice(L"info",L"Closing after the clip save and replay buffer stop.");
+            if(replayPending_.empty())BeginReplay(L"disable");SendState();return 0;
+        }
         if (folderDialogOpen_) {
             closeRequested_ = true;
             SetNotice(L"info", L"Close the folder selector to finish closing CamCord."); SendState();
@@ -602,6 +621,8 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         return 0;
     case WM_DESTROY:
         sourceEventWindow = nullptr;
+        UnregisterHotKey(hwnd_,REPLAY_HOTKEY_ID);
+        if(replayTask_.valid())replayTask_.wait();
         if (sourceEvents_) { UnhookWinEvent(sourceEvents_); sourceEvents_ = nullptr; }
         KillTimer(hwnd_, TIMER_RECORDING);
         ShutdownBlockReasonDestroy(hwnd_);
@@ -615,4 +636,38 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
     return DefWindowProcW(hwnd_, message, wParam, lParam);
+}
+
+void MainWindow::BeginReplay(const std::wstring& action) {
+    if(!replayPending_.empty() || folderDialogOpen_ || updateStatus_==L"installing" || (closeRequested_&&action!=L"disable")) {SendState(true);return;}
+    if(action==L"enable" && (pending_!=Action::None || snapshotState_!=RecorderState::Idle || replayEnabled_ || selectionInvalid_)) {SendState(true);return;}
+    if(action==L"disable"&&!replayEnabled_)return;
+    if(action==L"saveClip"&&(!replayEnabled_||replay_.Buffered()<1)) {SetNotice(L"info",L"Turn Instant Replay on and let it buffer first.");SendState(true);return;}
+    if(action==L"enable" && !RegisterHotKey(hwnd_,REPLAY_HOTKEY_ID,ReplayModifiers(settings_.replayHotkey),ReplayKey(settings_.replayHotkey))) {
+        SetNotice(L"error",L"The clip shortcut is already used by another app. Choose a different shortcut in Instant Replay settings.");SendState(true);return;
+    }
+    if(action==L"disable")UnregisterHotKey(hwnd_,REPLAY_HOTKEY_ID);
+    const auto end=action==L"saveClip"?replay_.Elapsed():0;
+    replayPending_=action;replayMessage_=action==L"enable"?L"Starting replay capture…":action==L"saveClip"?L"Saving clip in the background. Replay continues.":L"Stopping replay and clearing unsaved buffer…";SendState(true);
+    try {
+        replayTask_=std::async(std::launch::async,[this,action,copy=settings_,end,retain=replayRetain_,folder=outputFolder_]()mutable -> ActionResult {
+            OperationResult result;
+            try {if(action==L"enable")result=replay_.Start(copy,folder);else if(action==L"saveClip")result=replay_.SaveClip(end);else result=replay_.Stop(!retain);}
+            catch(...){result=OperationResult::Failure(L"Replay operation failed. Check the recording drive.");}
+            return {result,copy};
+        });
+    }catch(...){replayPending_.clear();if(action==L"enable")UnregisterHotKey(hwnd_,REPLAY_HOTKEY_ID);SetNotice(L"error",L"Could not start the replay task.");SendState(true);}
+}
+void MainWindow::PollReplay() {
+    if(!replayPending_.empty()&&replayTask_.valid()&&replayTask_.wait_for(std::chrono::milliseconds(0))==std::future_status::ready) {
+        const auto action=replayPending_;const bool retained=replayRetain_;auto result=replayTask_.get();replayPending_.clear();replayMessage_=result.result.message;
+        if(action==L"enable"){replayEnabled_=result.result.ok;if(replayEnabled_){settings_.fps=result.settings.fps;SaveSettings();}else UnregisterHotKey(hwnd_,REPLAY_HOTKEY_ID);}
+        if(action==L"disable"){replayEnabled_=false;replayRetain_=false;}
+        if(action==L"saveClip"&&result.result.ok)lastClip_=replay_.LastOutput();
+        SetNotice(result.result.ok?(retained?L"warning":L"success"):L"error",result.result.message);SendState(true);
+        if(closeRequested_){if(replayEnabled_)BeginReplay(L"disable");else PostMessageW(hwnd_,WM_CLOSE,0,0);}
+    }
+    if(replayEnabled_&&replayPending_.empty()&&!replay_.Healthy()) {
+        replayRetain_=true;SetNotice(L"error",L"Instant Replay stopped: source, encoder, audio or drive became unavailable. Recovery files are retained in .camcord-sessions.");BeginReplay(L"disable");
+    }
 }

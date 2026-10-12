@@ -6,14 +6,17 @@ import { spawn } from 'node:child_process';
 import { Recorder } from './recorder.mjs';
 import { loadPreferences, atomicJson, normalizeSettings, writableFolder, startupEnabled, setStartup } from './preferences.mjs';
 import { Updater, verifyUpdate } from './updater.mjs';
+import { Replay } from './replay.mjs';
+import { run } from './process.mjs';
 
-const {app,BrowserWindow,ipcMain,dialog,protocol,net,session,shell,powerSaveBlocker,Menu}=electron;
+const {app,BrowserWindow,ipcMain,dialog,protocol,net,session,shell,powerSaveBlocker,Menu,globalShortcut}=electron;
 const root=fileURLToPath(new URL('../',import.meta.url)), uiRoot=path.join(root,'ui');
 const version=JSON.parse(await readFile(path.join(root,'package.json'),'utf8')).version;
 const APP_URL='camcord://app/index.html';
 const smoke=process.env.CAMCORD_SMOKE_TEST==='1' && process.argv.includes('--smoke-test');
 app.setName('CamCord');
 app.setDesktopName('camcord.desktop');
+app.commandLine.appendSwitch('enable-features','GlobalShortcutsPortal');
 if(smoke) {app.commandLine.appendSwitch('no-sandbox');app.setPath('userData',process.env.CAMCORD_TEST_DATA);}
 protocol.registerSchemesAsPrivileged([{scheme:'camcord',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 if(!app.requestSingleInstanceLock()) app.quit();
@@ -28,13 +31,16 @@ const recorder=new Recorder({onFailure:message=>{
   });
 }});
 let preferences,preferencesFile,startupFile,startup=false,sources=[],source={kind:'display',id:'',label:'Choose a display',ready:false,width:0,height:0};
+const replay=new Replay();
+let replayPending='',replayMessage='Off. Turn on to capture a rolling buffer.',lastClip='',replayTask;
 function trusted(event) {return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame.url===APP_URL;}
 function send(notice,force=false) {
   if(!ready || !window || window.isDestroyed()) return;
   const state={type:'state',platform:'linux',state:pending || recorder.state,elapsedSeconds:recorder.elapsedSeconds(),settings:preferences.settings,
     appVersion:version,startupEnabled:startup,update,encoder:recorder.encoder?.label||'',outputFolder:preferences.outputFolder,
     lastOutput:recorder.lastOutput?path.basename(recorder.lastOutput):'',captureExcluded:false,cursorHidden:true,sourceDescription:portal?'Your desktop asks permission and chooses the source when recording starts.':'',
-    sourceChanging,portalCapture:portal,captureSource:source,sources:sources.map(({kind,id,label,primary})=>({kind,id,label,primary})),...(notice?{notice}:{})};
+    sourceChanging,portalCapture:portal,captureSource:source,sources:sources.map(({kind,id,label,primary})=>({kind,id,label,primary})),
+    replay:{enabled:replay.enabled,busy:Boolean(replayPending),saving:replayPending==='saveClip',bufferedSeconds:replay.buffered,message:replayMessage,lastClip:lastClip?path.basename(lastClip):''},...(notice?{notice}:{})};
   const signature=JSON.stringify(state);if(!force && signature===lastState)return;lastState=signature;
   window.webContents.send('camcord-state',state);
 }
@@ -47,10 +53,10 @@ async function action(state,operation) {
   try {const notice=await operation();send(notice);} catch(error) {send({severity:'error',text:error.message});}
   finally {
     pending=false;
-    if(recorder.state==='idle')releasePower();
+    if(recorder.state==='idle'&&!replay.enabled&&!replayPending)releasePower();
     send();
     if(closing) {
-      if(recorder.state==='idle'){allowClose=true;window.close();}
+      if(recorder.state==='idle'){window.close();}
       else action('saving',async()=>{await recorder.stop();});
     }
   }
@@ -62,7 +68,7 @@ async function refreshSources() {
 function select(entry) {source={...entry,ready:true,width:entry.width||0,height:entry.height||0};}
 async function updateAction(type,manual=true) {
   if(updateBusy || closing)return;
-  if(type==='installUpdate' && (pending || folderDialog || sourceChanging || recorder.state!=='idle' || update.status!=='ready')) {send({severity:'info',text:'Stop and save your recording before installing an update.'});return;}
+  if(type==='installUpdate' && (pending || folderDialog || sourceChanging || replay.enabled || replayPending || recorder.state!=='idle' || update.status!=='ready')) {send({severity:'info',text:'Stop and save your recording and turn Instant Replay off before installing an update.'});return;}
   updateBusy=true;updateManual=manual;
   try {
     if(type==='checkUpdates') {
@@ -89,6 +95,28 @@ async function updateAction(type,manual=true) {
   if(type==='checkUpdates' && updateInfo && (manual || preferences.settings.autoCheckUpdates) && !closing) updateAction('downloadUpdate',manual);
 }
 let updater;
+async function replayAction(type) {
+  if(replayPending || folderDialog || sourceChanging || update.status==='installing' || (closing&&type!=='disable')){send(undefined,true);return;}
+  if(type==='enable'&&(pending || recorder.state!=='idle'||replay.enabled||!source.ready)){send(undefined,true);return;}
+  if(type==='saveClip'&&(!replay.enabled||replay.buffered<1)){send({severity:'info',text:'Turn Instant Replay on and let it buffer first.'});return;}
+  if(type==='disable'&&!replay.enabled)return;
+  if(type==='enable') {
+    if(!globalShortcut.register(preferences.settings.replayHotkey,()=>replayAction('saveClip'))) {send({severity:'error',text:'The clip shortcut is unavailable or used by another app. Choose another shortcut; on Wayland approve your desktop’s shortcut permission.'},true);return;}
+  }
+  if(type==='disable')globalShortcut.unregister(preferences.settings.replayHotkey);
+  const end=type==='saveClip'?replay.elapsed():0;
+  replayPending=type;replayMessage=type==='enable'?'Starting replay capture…':type==='saveClip'?'Saving clip in the background. Replay continues.':'Stopping replay and clearing unsaved buffer…';send();
+  replayTask=(async()=>{
+    try {
+      if(type==='enable'){holdPower();if(source.kind==='display')window.minimize();await replay.start(preferences.settings,preferences.outputFolder,source,portal);preferences.settings=normalizeSettings(preferences.settings,replay.settings);await saveSettings();replayMessage='Buffering. Capture stays on until you turn it off or close CamCord.';}
+      else if(type==='saveClip'){lastClip=await replay.saveClip(end);replayMessage=`Clip saved: ${path.basename(lastClip)}`;}
+      else{await replay.stop();replayMessage='Off. Unsaved replay buffer cleared.';}
+      send({severity:'success',text:replayMessage});
+    }catch(error){replayMessage=error.message;if(type==='enable'&&!replay.enabled){globalShortcut.unregister(preferences.settings.replayHotkey);window.restore();}send({severity:'error',text:error.message});}
+    finally{replayPending='';if(recorder.state==='idle'&&!replay.enabled)releasePower();send(undefined,true);if(closing)window.close();}
+  })();
+  await replayTask;
+}
 async function command(message) {
   if(typeof message!=='string' || message.length>4096)return;
   let data;try {data=JSON.parse(message);} catch{return;}
@@ -97,6 +125,9 @@ async function command(message) {
   if(closing || update.status==='installing') {send();return;}
   if(['checkUpdates','downloadUpdate','installUpdate'].includes(data.type)) {if(data.type!=='downloadUpdate'||update.status==='available')await updateAction(data.type);return;}
   if(data.type==='openOutput'){await shell.openPath(preferences.outputFolder);return;}
+  if(data.type==='openClip'){if(lastClip)shell.showItemInFolder(lastClip);return;}
+  if(data.type==='replayEnabled'&&typeof data.enabled==='boolean'){await replayAction(data.enabled?'enable':'disable');return;}
+  if(data.type==='saveClip'){await replayAction('saveClip');return;}
   if(pending || folderDialog || sourceChanging){send(undefined,true);return;}
   if(data.type==='openLast'){if(recorder.lastOutput)shell.showItemInFolder(recorder.lastOutput);return;}
   if(data.type==='stop' && ['recording','paused'].includes(recorder.state)){await action('saving',async()=>{await recorder.stop();return{severity:'success',text:'Recording saved successfully.'};});return;}
@@ -106,6 +137,8 @@ async function command(message) {
     return;
   }
   if(recorder.state!=='idle'){send();return;}
+  if((replay.enabled||replayPending)&&data.type!=='start'){send(undefined,true);return;}
+  if(data.type==='start'&&replayPending&&replayPending!=='saveClip'){send(undefined,true);return;}
   if(data.type==='settings') {
     const previous=preferences.settings.autoCheckUpdates;
     preferences.settings=normalizeSettings(preferences.settings,data.settings);await saveSettings();
@@ -133,7 +166,7 @@ async function command(message) {
   } else if(data.type==='start') {
     if(!source.ready){send({severity:'warning',text:'Choose an available source before recording.'});return;}
     await action('starting',async()=>{
-      preferences.settings=normalizeSettings(preferences.settings,data.settings);holdPower();
+      if(!replay.enabled)preferences.settings=normalizeSettings(preferences.settings,data.settings);holdPower();
       if(source.kind==='display')window.minimize();
       try {await recorder.start(preferences.settings,preferences.outputFolder,source,portal);} catch(error) {window.restore();throw error;}
       preferences.settings=normalizeSettings(preferences.settings,recorder.settings);await saveSettings();
@@ -170,6 +203,12 @@ app.whenReady().then(async()=>{
   window.on('close',event=>{
     if(allowClose)return;
     if(update.status==='installing'){event.preventDefault();return;}
+    if(replay.enabled||replayPending) {
+      event.preventDefault();closing=true;updater.cancel();
+      if(replayPending==='enable')replay.capture?.child.kill('SIGTERM');
+      if(!replayPending)replayAction('disable');
+      send({severity:'info',text:'Closing after the clip save and replay buffer stop.'});return;
+    }
     if(pending || folderDialog || recorder.state!=='idle') {
       event.preventDefault();closing=true;updater.cancel();
       if(pending==='starting')recorder.capture?.child.kill('SIGTERM');
@@ -183,6 +222,10 @@ app.whenReady().then(async()=>{
   await window.loadURL(APP_URL);
   timer=setInterval(()=>{
     send();
+    if(replay.enabled&&!replayPending&&!replay.healthy()){
+      globalShortcut.unregister(preferences.settings.replayHotkey);replayPending='disable';
+      replay.stop(false).finally(()=>{replayPending='';replayMessage='Replay stopped: source, encoder, audio or drive became unavailable. Recovery files were retained.';send({severity:'error',text:replayMessage});if(closing)window.close();});
+    }
     if(!pending && !closing && ['recording','paused'].includes(recorder.state) && recorder.capture?.exited) {
       source={...source,ready:false};
       action('saving',async()=>{await recorder.stop();return{severity:'warning',text:'The capture source ended. The completed portion was saved.'};});
@@ -197,8 +240,24 @@ app.whenReady().then(async()=>{
       let saved=false;
       for(let index=0;index<50;index++) {await new Promise(resolve=>setTimeout(resolve,50));try{saved=JSON.parse(await readFile(preferencesFile,'utf8')).settings.fps===30;}catch{}if(saved)break;}
       if(!saved)throw new Error('Linux settings action did not reach the native backend.');
+      if(process.env.CAMCORD_TEST_SHORTCUT_HELPER) {
+        await window.webContents.executeJavaScript(`document.querySelector('button[aria-label="480p SD"]').click()`);
+        await new Promise(resolve=>setTimeout(resolve,500));
+        await window.webContents.executeJavaScript(`document.querySelector('input[aria-label="Enable Instant Replay"]').click()`);
+        for(let index=0;index<300&&!replay.enabled;index++)await new Promise(resolve=>setTimeout(resolve,50));
+        if(!replay.enabled || !globalShortcut.isRegistered('Ctrl+Shift+F8'))throw new Error('Installed replay start/global shortcut registration failed.');
+        await new Promise(resolve=>setTimeout(resolve,3000));
+        await run('python3',[process.env.CAMCORD_TEST_SHORTCUT_HELPER]);
+        for(let index=0;index<600&&!lastClip;index++)await new Promise(resolve=>setTimeout(resolve,50));
+        if(!lastClip||!replay.enabled)throw new Error('Actual global shortcut did not save a clip while replay remained active.');
+        await run('ffmpeg',['-hide_banner','-loglevel','error','-xerror','-i',lastClip,'-f','null','-']);
+        while(replayPending)await new Promise(resolve=>setTimeout(resolve,50));
+        await replayAction('disable');
+        if(replay.enabled||globalShortcut.isRegistered('Ctrl+Shift+F8'))throw new Error('Replay disable/shortcut cleanup failed.');
+        console.log('PASS: installed replay toggle, actual global Ctrl+Shift+F8, decodable clip, continuous capture and shortcut/buffer cleanup');
+      }
       console.log('PASS: packaged React UI, native handshake, Screen/Window controls, Linux startup copy and persistent settings action');app.exit(0);
     } catch(error){console.error(error);app.exit(1);}
   }
 }).catch(error=>{console.error(error);app.exit(1);});
-app.on('window-all-closed',()=>{clearInterval(timer);updater?.cancel();releasePower();app.quit();});
+app.on('window-all-closed',()=>{globalShortcut.unregisterAll();clearInterval(timer);updater?.cancel();releasePower();app.quit();});

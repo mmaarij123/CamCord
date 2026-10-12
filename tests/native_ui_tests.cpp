@@ -33,6 +33,15 @@ struct MainWindowTestAccess {
             app.HandleWebMessage(LR"({"type":"sourceMode","kind":"window"})");
             Check(app.settings_.captureTarget.kind == CaptureKind::Window && app.settings_.captureTarget.handle == 0,
                 "Window mode must require explicit source selection");
+            SendMessageW(fixture, WM_HOTKEY, 1708, 0);
+            Check(app.replayPending_.empty(), "Hotkey started capture with replay off");
+            app.replayEnabled_ = true;
+            app.ChooseOutputFolder();Check(!app.folderDialogOpen_, "Folder changed during replay capture");
+            app.HandleWebMessage(LR"({"type":"sourceMode","kind":"display"})");
+            Check(app.settings_.captureTarget.kind == CaptureKind::Window, "Source changed while replay was capturing");
+            app.updateStatus_=L"ready";app.BeginUpdate(MainWindow::UpdateAction::Verify,true);
+            Check(app.updateAction_==MainWindow::UpdateAction::None, "Update install started with replay on");
+            app.updateStatus_=L"idle";app.replayEnabled_=false;
             app.folderDialogOpen_ = true;
             Check(!SendMessageW(fixture, WM_QUERYENDSESSION, 0, 0), "Shutdown accepted during modal selection");
             SendMessageW(fixture, WM_CLOSE, 0, 0);

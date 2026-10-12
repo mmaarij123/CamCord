@@ -63,6 +63,9 @@ jobs:
       - name: Test updater and startup preferences
         shell: pwsh
         run: .\tests\app-features-test.ps1
+      - name: Test Instant Replay presets, precise clips, audio and buffer retention
+        shell: pwsh
+        run: .\tests\replay-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe
       - name: Test native modal selection and shutdown lifecycle
         shell: pwsh
         run: .\tests\native-ui-test.ps1

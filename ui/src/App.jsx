@@ -23,6 +23,7 @@ import { isNative, sendToHost, subscribeToHost } from './bridge.js';
 import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings, canInstallUpdate } from './recorder-state.js';
 const BitrateControl = lazy(() => import('./BitrateControl.jsx'));
 const CaptureSourceControl = lazy(() => import('./CaptureSourceControl.jsx'));
+const ReplayControl = lazy(() => import('./ReplayControl.jsx'));
 
 const RESOLUTIONS = [{ height: 480, label: 'SD' }, { height: 720, label: 'HD' }, { height: 1080, label: 'FHD' }];
 const FRAME_RATES = [15, 30, 60];
@@ -44,8 +45,9 @@ export default function App() {
   const installingUpdate = app.update.status === 'installing';
   const updateBusy = ['checking', 'downloading', 'installing'].includes(app.update.status);
   const sourceBusy = sourcePending || app.sourceChanging;
-  const settingsDisabled = !idle || !connected || installingUpdate || sourceBusy;
-  const elapsed = formatElapsed(app.elapsedSeconds);
+  const recordingStartDisabled = !idle || !connected || installingUpdate || sourceBusy || (app.replay.busy&&!app.replay.saving);
+  const settingsDisabled = recordingStartDisabled || app.replay.enabled || app.replay.busy;
+  const elapsed = formatElapsed(idle&&app.replay.enabled?app.replay.bufferedSeconds:app.elapsedSeconds);
   const frameRates = app.settings.height === 1080 ? HIGH_FRAME_RATES : FRAME_RATES;
   const width = app.settings.height === 480 ? 854 : app.settings.height === 720 ? 1280 : 1920;
   const linux = app.platform === 'linux';
@@ -109,11 +111,16 @@ export default function App() {
   }
 
   function startRecording() {
-    if (settingsDisabled || !app.captureSource.ready) return;
+    if (recordingStartDisabled || !app.captureSource.ready) return;
     setPendingState('starting');
     if (!sendToHost({ type: 'start', settings: app.settings })) {
       previewTransition('recording', { elapsedSeconds: 0, encoder: 'Preview mode' });
     }
+  }
+
+  function replayAction(action) {
+    if(!connected||installingUpdate)return;
+    if(!sendToHost(action))setNotice({severity:'info',text:'Instant Replay and global shortcuts are available in the CamCord desktop app. Preview does not capture anything.',key:Date.now()});
   }
 
   function pauseRecording() {
@@ -159,6 +166,7 @@ export default function App() {
   }
 
   const readoutNote = !connected ? 'Connecting to the recorder…'
+    : idle&&app.replay.enabled ? `Instant Replay is capturing ${app.captureSource.label}. Press ${app.settings.replayHotkey} to save up to ${app.settings.replaySeconds} seconds. ${!app.captureExcluded?'Minimize CamCord to keep its controls out of screen clips.':''}`
     : sourceBusy ? 'Updating capture sources…'
     : currentState === 'starting' ? 'Checking your selected source, audio, and encoder.'
       : currentState === 'pausing' ? 'Finishing the current recording segment.'
@@ -194,7 +202,7 @@ export default function App() {
           <div className="monitor-topline">
             <div className="status-label" role="status" aria-live="polite">
               {busy ? <CircularProgress size={12} thickness={5} aria-hidden="true" /> : <span className="status-pulse" />}
-              {connected ? STATE_LABELS[currentState] : 'Connecting'}
+              {connected ? idle&&app.replay.enabled?'Instant Replay on':STATE_LABELS[currentState] : 'Connecting'}
             </div>
             <span className="quality-readout">{qualityLabel}</span>
           </div>
@@ -207,10 +215,10 @@ export default function App() {
             <div className="timer" role="timer" aria-label={`Elapsed time ${elapsed}`}>{elapsed}</div>
             <p className="readout-note">{readoutNote}</p>
           </div>
-          <Waveform active={recording} paused={paused} />
+          <Waveform active={recording||app.replay.enabled} paused={paused&&!app.replay.enabled} />
           <div className="control-dock">
             {idle ? (
-              <Button className="record-button" variant="contained" size="large" disabled={settingsDisabled || !app.captureSource.ready} startIcon={<FiberManualRecordRounded />} onClick={startRecording}>Start recording</Button>
+              <Button className="record-button" variant="contained" size="large" disabled={recordingStartDisabled || !app.captureSource.ready} startIcon={<FiberManualRecordRounded />} onClick={startRecording}>Start recording</Button>
             ) : (
               <>
                 <Button className="pause-button" variant="outlined" disabled={busy} startIcon={paused ? <PlayArrowRounded /> : <PauseRounded />} onClick={pauseRecording}>{paused ? 'Resume' : 'Pause'}</Button>
@@ -274,8 +282,11 @@ export default function App() {
               {app.update.status === 'available' ? <Button variant="contained" size="small" disabled={!connected || updateBusy} onClick={() => updateApp('downloadUpdate')}>Download update</Button> : null}
               {app.update.status === 'ready' ? <Tooltip title={!idle ? 'Stop and save your recording first' : sourceBusy ? 'Finish changing your capture source first' : 'CamCord will restart after installation'}><span><Button variant="contained" size="small" disabled={!connected || !canInstallUpdate({ ...app, state: currentState }, sourceBusy)} onClick={() => updateApp('installUpdate')}>Install &amp; restart</Button></span></Tooltip> : null}
             </div>
-            <span className="field-hint">Updates install when you choose. Stop and save your recording first.</span>
+            <span className="field-hint">Updates install when you choose. Stop recording and turn Instant Replay off first.</span>
           </section>
+          <Suspense fallback={<div className="settings-group" role="status">Loading Instant Replay settings…</div>}>
+            <ReplayControl settings={app.settings} replay={app.replay} settingsDisabled={settingsDisabled} disabled={!connected||installingUpdate||sourceBusy||busy||(!app.replay.enabled&&!idle)||!app.captureSource.ready} onSettings={changeSettings} onAction={replayAction} />
+          </Suspense>
         </aside>
       </main>
 

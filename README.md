@@ -10,6 +10,7 @@ A lightweight screen recorder for every capture you imagine. Available on Window
 - **Video bitrate:** Auto, or choose 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 50, 64, 75 or 100 Mbps. See estimated storage use; 32 Mbps and higher show a storage warning. Your choice is remembered.
 - **Audio options:** capture system audio, your microphone, both, or video only.
 - **Pause and resume:** take breaks and save the recording as one video.
+- **Instant Replay:** enable background capture and save the previous 30 seconds to 5 minutes with a global shortcut, like an instant-replay clip. Configurable duration and shortcut presets, buffer progress and a Save clip button are inside settings.
 - **Custom save location:** choose a folder or drive inside the app; CamCord remembers your preferences.
 - **Hardware acceleration:** automatically selects a supported hardware encoder, with a software fallback. Availability depends on your operating system, GPU and drivers.
 - **Background saving:** shows a saving status while longer recordings are being finalized.
@@ -59,6 +60,18 @@ On **Wayland**, install your desktop's matching portal backend if it is missing 
 **Launch at login** is optional in App settings. **Automatic updates** checks for new Debian releases; **Install & restart** asks for your system's administrator authentication and is available only when recording has stopped.
 
 ### Recording notes
+
+### Instant Replay / clipping
+
+In **Instant Replay** settings, select **30 seconds, 1, 1.5, 2, 3, 4 or 5 minutes**, choose a shortcut, and turn **Rolling capture** on. The default shortcut is **Ctrl+Shift+F8**. Press it while CamCord is open (including minimized) to save the preceding clip as an MP4 in your selected recording folder. **Save clip** does the same from the app. If the buffer is not full yet, only the available time is saved.
+
+Replay uses the selected Screen/Window, resolution, FPS, bitrate and audio toggles. It can continue alongside manual recording, and manual pause does not pause replay. It retains short video/audio chunks on the selected drive, not several minutes of raw frames in RAM. Higher bitrate/duration consumes more storage; saving requires additional free space and software clip encoding can take time. The buffer continues while one clip saves; further save requests wait until that save finishes. There is no queued backlog.
+
+Turn replay off before changing capture settings, duration, shortcut or folder, or installing an update. Turning it off/closing CamCord clears unsaved chunks; completed clips remain. Duration and shortcut are remembered, but **Replay starts off on every launch**, including startup/login, to avoid silently capturing your desktop or microphone.
+
+On Wayland, replay requires ScreenCast permission and a desktop supporting the GlobalShortcuts portal. Your desktop may ask you to approve the shortcut. If a shortcut is already reserved, choose another preset. A second permission picker may appear when you also start manual recording. Protected apps, exclusive fullscreen games and compositor restrictions can prevent capture/shortcuts; this is not an NVIDIA driver-level game-capture integration.
+
+### General notes
 
 System audio records all desktop playback, not only the selected window. Capture-source permissions/selections are not remembered across restarts; quality, bitrate, save location and other settings are preserved. Protected apps may refuse capture.
 
