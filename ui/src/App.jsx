@@ -20,7 +20,7 @@ import SystemUpdateAltRounded from '@mui/icons-material/SystemUpdateAltRounded';
 import LinearProgress from '@mui/material/LinearProgress';
 import { BrandMark, SettingRow, Waveform } from './components.jsx';
 import { isNative, sendToHost, subscribeToHost } from './bridge.js';
-import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings, canInstallUpdate } from './recorder-state.js';
+import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings, canInstallUpdate, canToggleReplay } from './recorder-state.js';
 const BitrateControl = lazy(() => import('./BitrateControl.jsx'));
 const CaptureSourceControl = lazy(() => import('./CaptureSourceControl.jsx'));
 const ReplayControl = lazy(() => import('./ReplayControl.jsx'));
@@ -285,7 +285,7 @@ export default function App() {
             <span className="field-hint">Updates install when you choose. Stop recording and turn Instant Replay off first.</span>
           </section>
           <Suspense fallback={<div className="settings-group" role="status">Loading Instant Replay settings…</div>}>
-            <ReplayControl settings={app.settings} replay={app.replay} settingsDisabled={settingsDisabled} disabled={!connected||installingUpdate||sourceBusy||busy||(!app.replay.enabled&&!idle)||!app.captureSource.ready} onSettings={changeSettings} onAction={replayAction} />
+            <ReplayControl settings={app.settings} replay={app.replay} settingsDisabled={settingsDisabled} disabled={!canToggleReplay({...app,state:currentState},connected,sourceBusy)} onSettings={changeSettings} onAction={replayAction} />
           </Suspense>
         </aside>
       </main>

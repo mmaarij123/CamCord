@@ -3,6 +3,11 @@
 #include <stdexcept>
 
 static void Check(bool condition, const char* text) { if (!condition) throw std::runtime_error(text); }
+struct ReplayTestAccess {
+    // No capture process is created. Simulate a still-live cached producer after
+    // its selected source disappeared, to exercise the independent UI-thread guard.
+    static void CachedProducer(ReplayManager& replay) { replay.healthy_=true; }
+};
 struct MainWindowTestAccess {
     static void Run() {
         WNDCLASSW type{};
@@ -51,6 +56,11 @@ struct MainWindowTestAccess {
             app.updateStatus_=L"ready";app.BeginUpdate(MainWindow::UpdateAction::Verify,true);
             Check(app.updateAction_==MainWindow::UpdateAction::None, "Update install started with replay on");
             app.updateStatus_=L"idle";app.replayEnabled_=false;
+            app.replayEnabled_=true;ReplayTestAccess::CachedProducer(app.replay_);
+            app.PollReplay();
+            Check(app.replayPending_==L"disable", "Lost replay source did not stop a cached/live producer");
+            for(int index=0;index<100&&!app.replayPending_.empty();index++){Sleep(10);app.PollReplay();}
+            Check(!app.replayEnabled_&&app.replayPending_.empty(), "Source-loss replay shutdown did not finish");
             app.folderDialogOpen_ = true;
             Check(!SendMessageW(fixture, WM_QUERYENDSESSION, 0, 0), "Shutdown accepted during modal selection");
             SendMessageW(fixture, WM_CLOSE, 0, 0);

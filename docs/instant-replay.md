@@ -1,4 +1,4 @@
-# Instant Replay (v1.8.0)
+# Instant Replay (v1.8.1)
 
 ## Behavior
 
@@ -17,6 +17,7 @@ Replay takes a fixed quality/source/audio snapshot when enabled. Disable before 
 - NTFS/hard-link-capable Linux filesystems share snapshot data without copying. Other filesystems copy owned chunks. Conservative free-space checks allow for snapshot/export overhead; low remaining space stops replay with recovery retained.
 - Healthy Windows exports explicitly bypass the child helper's default 30-second timeout; the asynchronous worker keeps the UI responsive. Failed exports retain their private snapshot directory. Final MP4 publication never overwrites an existing file. Disabling clears only the app-created buffer, not completed clips or failed export snapshots.
 - Windows session directories are created exclusively with a process-wide atomic serial. Concurrent manual-recording and clip workers cannot accidentally share a timestamp-only folder or delete one another's media; a 40-worker concurrency test covers this boundary.
+- Windows independently validates source identity/visibility during replay, even if the raw producer leaves a cached frame when a window minimizes/closes. Source loss stops replay and retains recovery. The UI still permits turning off an active replay when its selected source is unavailable.
 
 ## Verification
 

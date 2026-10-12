@@ -667,7 +667,12 @@ void MainWindow::PollReplay() {
         SetNotice(result.result.ok?(retained?L"warning":L"success"):L"error",result.result.message);SendState(true);
         if(closeRequested_){if(replayEnabled_)BeginReplay(L"disable");else PostMessageW(hwnd_,WM_CLOSE,0,0);}
     }
-    if(replayEnabled_&&replayPending_.empty()&&!replay_.Healthy()) {
-        replayRetain_=true;SetNotice(L"error",L"Instant Replay stopped: source, encoder, audio or drive became unavailable. Recovery files are retained in .camcord-sessions.");BeginReplay(L"disable");
+    if(replayEnabled_&&replayPending_.empty()) {
+        const auto& target=settings_.captureTarget;
+        const bool missing=selectionInvalid_||!CaptureSourceExists(target)||(target.kind==CaptureKind::Window&&
+            (IsIconic(reinterpret_cast<HWND>(target.handle))||!IsWindowVisible(reinterpret_cast<HWND>(target.handle))));
+        if(!replay_.Healthy()||missing) {
+            replayRetain_=true;SetNotice(L"error",L"Instant Replay stopped: source, encoder, audio or drive became unavailable. Recovery files are retained in .camcord-sessions.");BeginReplay(L"disable");
+        }
     }
 }

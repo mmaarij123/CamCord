@@ -94,3 +94,8 @@ export function mergeState(previous, message) {
 export function canInstallUpdate(app, sourcePending = false) {
   return app.state === 'idle' && !sourcePending && !app.replay?.enabled && !app.replay?.busy && app.update.status === 'ready';
 }
+
+export function canToggleReplay(app, connected = true, sourcePending = false) {
+  return connected && app.update.status !== 'installing' && !sourcePending && !app.replay.busy &&
+    (app.replay.enabled || (app.state === 'idle' && app.captureSource.ready));
+}
