@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
+#include <atomic>
 
 OperationResult OutputManager::EnsureCaptureFolder() {
     if (captureFolder_.empty()) {
@@ -57,9 +58,17 @@ std::wstring OutputManager::NewOutputPath() const {
 }
 
 std::wstring OutputManager::NewSessionFolder() const {
-    auto path = std::filesystem::path(captureFolder_) / L".camcord-sessions" /
-        (Timestamp() + L"_" + std::to_wstring(GetCurrentProcessId()) + L"_" + std::to_wstring(GetTickCount64()));
+    static std::atomic<unsigned long long> serial{0};
+    const auto parent = std::filesystem::path(captureFolder_) / L".camcord-sessions";
     std::error_code ec;
-    std::filesystem::create_directories(path, ec);
-    return ec ? L"" : path.wstring();
+    std::filesystem::create_directories(parent, ec);
+    if(ec)return L"";
+    // Manual recording and replay snapshots have independent workers. A timestamp
+    // alone can collide in the same millisecond and make one cleanup erase the other.
+    for(int attempt=0;attempt<100;attempt++) {
+        const auto path=parent/(Timestamp()+L"_"+std::to_wstring(GetCurrentProcessId())+L"_"+std::to_wstring(GetTickCount64())+L"_"+std::to_wstring(serial.fetch_add(1)));
+        if(CreateDirectoryW(path.c_str(),nullptr))return path.wstring();
+        if(GetLastError()!=ERROR_ALREADY_EXISTS)return L"";
+    }
+    return L"";
 }

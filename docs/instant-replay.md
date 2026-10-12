@@ -15,6 +15,7 @@ Replay takes a fixed quality/source/audio snapshot when enabled. Disable before 
 - A hotkey records an endpoint immediately. Export waits for the next completed chunks (bounded 15-second readiness wait), pins/copies immutable inputs, then trims video/audio to that endpoint. It excludes later frames even though capture continues. Software H.264 export gives accurate trimming between keyframes and may be slow for long/high-resolution clips.
 - NTFS/hard-link-capable Linux filesystems share snapshot data without copying. Other filesystems copy owned chunks. Conservative free-space checks allow for snapshot/export overhead; low remaining space stops replay with recovery retained.
 - Healthy Windows exports explicitly bypass the child helper's default 30-second timeout; the asynchronous worker keeps the UI responsive. Failed exports retain their private snapshot directory. Final MP4 publication never overwrites an existing file. Disabling clears only the app-created buffer, not completed clips or failed export snapshots.
+- Windows session directories are created exclusively with a process-wide atomic serial. Concurrent manual-recording and clip workers cannot accidentally share a timestamp-only folder or delete one another's media; a 40-worker concurrency test covers this boundary.
 
 ## Verification
 

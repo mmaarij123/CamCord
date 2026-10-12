@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <sstream>
 #include <set>
+#include <future>
 namespace fs=std::filesystem;
 static void Check(bool value,const char* why){if(!value)throw std::runtime_error(why);}
 struct ReplayTestAccess {
@@ -35,6 +36,10 @@ int wmain(int argc,wchar_t** argv) {
         AudioFiles audio;Check(audio.Open((root/L"rolling").wstring(),&format,true),"Rolling PCM open failed");Check(audio.Silence(9ull*32000)&&audio.Close(),"PCM splitting failed");
         for(int i=0;i<5;i++){std::wostringstream name;name<<L"rolling_"<<std::setfill(L'0')<<std::setw(9)<<i<<L".wav";Check(fs::exists(root/(name.str()+L".done"))&&fs::file_size(root/name.str())>=32000,"Closed PCM chunk truncated");}
         std::cout<<"PASS: strict replay preferences/hotkeys and continuous PCM splitting\n";
+        OutputManager folders;folders.SetCaptureFolder(root.wstring());std::vector<std::future<std::wstring>> jobs;
+        for(int i=0;i<40;i++)jobs.push_back(std::async(std::launch::async,[&folders]{return folders.NewSessionFolder();}));
+        std::set<std::wstring> unique;for(auto& job:jobs){const auto folder=job.get();Check(!folder.empty(),"Concurrent session creation failed");unique.insert(folder);}
+        Check(unique.size()==40,"Manual recording and clip sessions collided");
         run(L"-f lavfi -i color=c=blue:s=160x90:r=15 -vf "+QuoteArg(L"drawbox=color=red:t=fill:enable='gte(t,308)'")+L" -t 310 -an -c:v libx264 -preset ultrafast -g 30 -bf 0 -f segment -segment_time 2 -segment_format matroska -reset_timestamps 1 -segment_list_type csv -segment_list_size 162 -segment_list "+QuoteArg((session/L"video.log.csv").wstring())+L" "+QuoteArg((session/L"video_%09d.mkv").wstring()),L"generate.log");
         const auto tone=root/L"tone.wav";run(L"-f lavfi -i sine=frequency=660:sample_rate=48000 -t 2 -c:a pcm_s16le -ac 2 -rf64 always "+QuoteArg(tone.wstring()),L"tone.log");
         for(const auto* prefix:{L"system",L"mic"})for(int i=0;i<155;i++){std::wostringstream name;name<<prefix<<L"_"<<std::setfill(L'0')<<std::setw(9)<<i<<L".wav";fs::create_hard_link(tone,session/name.str());std::ofstream marker(session/(name.str()+L".done"));}
