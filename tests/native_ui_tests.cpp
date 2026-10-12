@@ -17,6 +17,15 @@ struct MainWindowTestAccess {
             HWND fixture = CreateWindowW(type.lpszClassName, L"Isolated lifecycle test", WS_OVERLAPPEDWINDOW,
                 0, 0, 640, 600, nullptr, nullptr, type.hInstance, nullptr);
             Check(fixture != nullptr, "Fixture creation failed");
+            // Only isolated CI desktop sessions touch global registrations.
+            wchar_t ci[8]{};
+            if(GetEnvironmentVariableW(L"CI",ci,8)&&std::wstring(ci)==L"true") {
+                Check(RegisterHotKey(fixture,2708,ReplayModifiers(L"Ctrl+Shift+F8"),ReplayKey(L"Ctrl+Shift+F8"))!=FALSE,"Windows global clip shortcut registration failed");
+                Check(UnregisterHotKey(fixture,2708)!=FALSE,"Windows shortcut cleanup failed");
+                Check(RegisterHotKey(fixture,2708,ReplayModifiers(L"Ctrl+Alt+F10"),ReplayKey(L"Ctrl+Alt+F10"))!=FALSE,"Alternate Windows clip shortcut failed");
+                Check(UnregisterHotKey(fixture,2708)!=FALSE,"Alternate shortcut cleanup failed");
+                std::cout<<"PASS: Windows CI global shortcut registration and cleanup\n";
+            }
             app.hwnd_ = fixture;
             SetWindowLongPtrW(fixture, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&app));
             SetWindowLongPtrW(fixture, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(MainWindow::WindowProc));

@@ -59,8 +59,6 @@ On **Wayland**, install your desktop's matching portal backend if it is missing 
 
 **Launch at login** is optional in App settings. **Automatic updates** checks for new Debian releases; **Install & restart** asks for your system's administrator authentication and is available only when recording has stopped.
 
-### Recording notes
-
 ### Instant Replay / clipping
 
 In **Instant Replay** settings, select **30 seconds, 1, 1.5, 2, 3, 4 or 5 minutes**, choose a shortcut, and turn **Rolling capture** on. The default shortcut is **Ctrl+Shift+F8**. Press it while CamCord is open (including minimized) to save the preceding clip as an MP4 in your selected recording folder. **Save clip** does the same from the app. If the buffer is not full yet, only the available time is saved.
