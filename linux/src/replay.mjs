@@ -35,6 +35,14 @@ export class Replay extends Recorder {
     const catalogs=[await this.catalog()];
     for(let index=0;index<this.audioProcesses.length;index++)catalogs.push((await this.catalog(`audio_${index}`,'wav')).map(chunk=>({...chunk,end:chunk.end-this.audioOffset})));
     for(const chunks of catalogs)for(const chunk of chunks)if(chunk.end<before&&!this.pinned.has(chunk.file))await unlink(chunk.file).catch(error=>{if(error.code!=='ENOENT')throw error;});
+    const names=await readdir(this.session);
+    for(const [track,chunks]of catalogs.entries()) {
+      if(!chunks.length)continue;
+      const prefix=track?`audio_${track-1}`:'video',extension=track?'wav':'mkv';
+      const pattern=new RegExp(`^${prefix}_([0-9]{9})\\.${extension}$`),oldest=Number(path.basename(chunks[0].file).match(pattern)[1]);
+      for(const name of names) {const match=name.match(pattern),file=path.join(this.session,name);
+        if(match&&Number(match[1])<oldest&&!this.pinned.has(file))await unlink(file).catch(error=>{if(error.code!=='ENOENT')throw error;});}
+    }
     const space=await statfs(this.session,{bigint:true});if(space.bavail*space.bsize<256n*1024n*1024n)throw new Error('Replay stopped: the recording drive is nearly full.');
     this.buffered=Math.max(0,Math.min(this.settings.replaySeconds,Math.floor(this.elapsed())));
   }
@@ -66,7 +74,7 @@ export class Replay extends Recorder {
         const copies=[];for(const chunk of chunks){const target=path.join(job,path.basename(chunk.file));try{await link(chunk.file,target);}catch(error){if(!['EPERM','ENOTSUP','EOPNOTSUPP','EXDEV'].includes(error.code))throw error;await copyFile(chunk.file,target);}copies.push(target);}
         const list=path.join(job,`${index}.txt`);await writeFile(list,copies.map(concatLine).join(''),{mode:0o600});snapshots.push(list);
       }
-    } catch(error){throw new Error(`${error.message}\nRecovery files: ${job}`);}
+    } catch(error){throw new Error(`${error.message}\nRecovery files: ${job||this.session}`);}
     finally{for(const chunks of chosen)for(const chunk of chunks)this.pinned.delete(chunk.file);}
     try {
       const args=['-y','-hide_banner','-loglevel','error','-xerror'];

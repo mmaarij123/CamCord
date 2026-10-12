@@ -71,9 +71,14 @@ OperationResult ReplayManager::Start(RecordingSettings& settings,const std::wstr
 void ReplayManager::Prune() {
     const auto before=Elapsed()-settings_.replaySeconds-20;
     std::lock_guard lock(files_);
-    for(const auto& chunk:Catalog(session_))if(chunk.end<before){std::error_code ec;fs::remove(chunk.file,ec);}
+    const auto catalog=Catalog(session_);
+    for(const auto& chunk:catalog)if(chunk.end<before){std::error_code ec;fs::remove(chunk.file,ec);}
+    const int oldest=catalog.empty()?-1:std::stoi(catalog.front().file.filename().string().substr(6,9));
     for(const auto& item:fs::directory_iterator(session_)) {
         const auto name=item.path().filename().string();std::smatch match;
+        // Entries which fell out of FFmpeg's bounded catalog are also closed.
+        // This covers slow snapshot copies without touching the active file.
+        if(oldest>=0&&std::regex_match(name,match,std::regex("video_([0-9]{9})\\.mkv"))&&std::stoi(match[1].str())<oldest){std::error_code ec;fs::remove(item.path(),ec);continue;}
         if(std::regex_match(name,match,std::regex("(system|mic)_([0-9]{9})\\.wav")) &&
            std::stod(match[2].str())*2+2-(match[1].str()=="system"?systemOffset_:micOffset_)<before) {
             // Never delete the currently-open audio chunk; its .done marker is required.
@@ -138,7 +143,9 @@ OperationResult ReplayManager::SaveClip(double end) {
         args+=VideoEncodingArguments(settings_,{L"libx264",L"Software H.264",false}).substr(4);
         if(audioCount)args+=L" -c:a aac -b:a 192k -ar 48000 -ac 2";else args+=L" -an";
         args+=L" -movflags +faststart "+QuoteArg(staging);
-        if(ChildProcess::Run(ffmpeg_,args,log)!=0)throw std::runtime_error("Clip encoding failed");
+        // Healthy 5-minute exports can take longer than the process helper's
+        // default 30 seconds. The asynchronous worker keeps the UI responsive.
+        if(ChildProcess::Run(ffmpeg_,args,log,INFINITE)!=0)throw std::runtime_error("Clip encoding failed");
         const auto clip=(fs::path(output_.CaptureFolder())/(L"CamCord_Clip_"+fs::path(job).filename().wstring()+L".mp4")).wstring();
         if(!MoveFileExW(staging.c_str(),clip.c_str(),MOVEFILE_WRITE_THROUGH))throw std::runtime_error("Clip publication failed");
         lastOutput_=clip;std::error_code ec;fs::remove_all(job,ec);return OperationResult::Success(L"Clip saved: "+fs::path(clip).filename().wstring());

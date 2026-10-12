@@ -16,7 +16,8 @@ test('replay catalog rejects unsafe entries and incomplete/gapped snapshots',()=
   assert.throws(()=>selectChunks(chunks,0,5));assert.throws(()=>selectChunks(chunks,3,7));assert.throws(()=>selectChunks([{...chunks[0],end:3},chunks[1]],2,5));
 });
 test('all replay durations trim to the hotkey time, audio mixes, unique clips, corruption recovery and bounded pruning', {timeout:180000},async t=>{
-  const root=await mkdtemp(path.join(os.tmpdir(),'camcord-replay-test-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const fixture=await mkdtemp(path.join(os.tmpdir(),'camcord-replay-test-'));t.after(()=>rm(fixture,{recursive:true,force:true}));
+  const root=path.join(fixture,"O'Brien 🎬 اردو");await mkdir(root);
   const session=path.join(root,'.camcord-sessions','buffer');await mkdir(session,{recursive:true});
   await run(ffmpeg,['-y','-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=160x90:r=15','-vf',"drawbox=color=red:t=fill:enable='gte(t,308)'",'-t','310','-an','-c:v','libx264','-preset','ultrafast','-g','30','-bf','0',
     '-f','segment','-segment_time','2','-segment_format','matroska','-reset_timestamps','1','-segment_list_type','csv','-segment_list_size','162','-segment_list',path.join(session,'video.csv'),path.join(session,'video_%09d.mkv')],{timeout:60000});

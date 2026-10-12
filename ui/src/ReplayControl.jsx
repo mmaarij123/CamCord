@@ -15,7 +15,7 @@ export default function ReplayControl({settings,replay,disabled,settingsDisabled
     <div className="settings-group">
       <label className="field-label" id="replay-duration-label">Clip duration</label>
       <Select fullWidth size="small" labelId="replay-duration-label" value={settings.replaySeconds} disabled={settingsDisabled} onChange={event=>onSettings({replaySeconds:event.target.value})}>
-        {REPLAY_DURATIONS.map(seconds=><MenuItem key={seconds} value={seconds}>{seconds<60?`${seconds} seconds`:`${seconds/60} minutes`}</MenuItem>)}
+        {REPLAY_DURATIONS.map(seconds=><MenuItem key={seconds} value={seconds}>{seconds<60?`${seconds} seconds`:seconds===60?'1 minute':`${seconds/60} minutes`}</MenuItem>)}
       </Select>
     </div>
     <div className="settings-group">

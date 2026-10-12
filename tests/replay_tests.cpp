@@ -20,7 +20,7 @@ struct ReplayTestAccess {
     static void Prune(ReplayManager& r){r.Prune();}
 };
 int wmain(int argc,wchar_t** argv) {
-    if(argc!=3)return 2;const std::wstring ffmpeg=argv[1];const fs::path root=fs::absolute(argv[2]),session=root/L".camcord-sessions"/L"buffer";
+    if(argc!=3)return 2;const std::wstring ffmpeg=argv[1];const fs::path root=fs::absolute(argv[2])/L"O'Brien_اردو_🎬",session=root/L".camcord-sessions"/L"buffer";
     fs::create_directories(session);
     auto run=[&](const std::wstring& args,const std::wstring& log){Check(ChildProcess::Run(ffmpeg,L"-y -hide_banner -loglevel error "+args,(root/log).wstring(),120000)==0,"Synthetic replay FFmpeg failed");};
     try {

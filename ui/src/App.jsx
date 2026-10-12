@@ -198,7 +198,7 @@ export default function App() {
       {!isNative ? <div className="preview-banner">Interface preview · no screen or audio is recorded</div> : null}
 
       <main className="workspace">
-        <section className={`monitor-panel state-${currentState}`} aria-label="Recording controls">
+        <section className={`monitor-panel state-${currentState}${app.replay.enabled?' replay-active':''}`} aria-label="Recording controls">
           <div className="monitor-topline">
             <div className="status-label" role="status" aria-live="polite">
               {busy ? <CircularProgress size={12} thickness={5} aria-hidden="true" /> : <span className="status-pulse" />}
@@ -212,7 +212,7 @@ export default function App() {
               <span className="aperture-ring ring-two" />
               <span className="aperture-core"><span /></span>
             </div>
-            <div className="timer" role="timer" aria-label={`Elapsed time ${elapsed}`}>{elapsed}</div>
+            <div className="timer" role="timer" aria-label={`${idle&&app.replay.enabled?'Replay buffer':'Elapsed time'} ${elapsed}`}>{elapsed}</div>
             <p className="readout-note">{readoutNote}</p>
           </div>
           <Waveform active={recording||app.replay.enabled} paused={paused&&!app.replay.enabled} />

@@ -167,6 +167,7 @@ button:focus-visible, .MuiButtonBase-root:focus-visible { outline: 2px solid #f2
 .app-preferences, .replay-settings { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
 .app-preferences h3, .replay-settings h3 { margin: 0 0 9px; color: #dbe0e7; font-size: 14px; font-weight: 680; }
 .replay-settings .update-actions { margin-top: 12px; margin-bottom: 10px; }
+.replay-active .status-pulse { background: var(--accent); }
 .app-preferences .setting-row { min-height: 68px; }
 .app-preferences .setting-copy strong { line-height: 1.45; }
 .update-heading { display: flex; justify-content: space-between; gap: 10px; margin-top: 20px; }
