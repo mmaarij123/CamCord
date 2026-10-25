@@ -96,28 +96,23 @@ export class Recorder {
     return result;
   }
   async startSegment() {
-    const file=path.join(this.session,this.rolling?'video_%09d.mkv':`segment_${this.segments.length+1}.mkv`);
+    const file=path.join(this.session,`segment_${this.segments.length+1}.mkv`);
     const audios=await this.audioSources();
     this.audioStopping=false;this.audioProcesses=[];
-    const audioFiles=[],epoch=(Date.now()/1000).toFixed(3),audioAt=performance.now();
+    const audioFiles=[],epoch=(Date.now()/1000).toFixed(3);
     for(const [index,source] of audios.entries()) {
-      const wave=path.join(this.session,this.rolling?`audio_${index}_%09d.wav`:`segment_${this.segments.length+1}_audio_${index}.wav`);
+      const wave=path.join(this.session,`segment_${this.segments.length+1}_audio_${index}.wav`);
       const process=new ManagedProcess(this.ffmpeg,['-y','-hide_banner','-loglevel','warning','-copyts','-probesize','32','-analyzeduration','0',
         '-use_wallclock_as_timestamps','1','-f','pulse','-sample_rate','48000','-channels','2','-i',source,
-        '-af',`asetpts=PTS-${epoch}/TB,aresample=48000:async=1:first_pts=0`,'-c:a','pcm_s16le','-ar','48000','-ac','2',
-        ...(this.rolling?['-f','segment','-segment_time','2','-segment_format','wav','-segment_format_options','rf64=always','-reset_timestamps','1',
-          '-segment_list_type','csv','-segment_list_size','162','-segment_list',path.join(this.session,`audio_${index}.csv`)]:['-rf64','always']),wave],`${wave}.log`);
+        '-af',`asetpts=PTS-${epoch}/TB,aresample=48000:async=1:first_pts=0`,'-c:a','pcm_s16le','-ar','48000','-ac','2','-rf64','always',wave],`${wave}.log`);
       this.audioProcesses.push(process);audioFiles.push(wave);
       process.done.then(()=>{if(!this.audioStopping && this.state==='recording'){this.failed=new Error('An audio device stopped unexpectedly. Recovery files were retained.');this.onFailure(this.failed.message);}});
     }
     const args=['-y','-hide_banner','-loglevel','warning','-probesize','32','-analyzeduration','0','-use_wallclock_as_timestamps','1',
       '-f','rawvideo','-pixel_format','bgra','-video_size',`${this.settings.width}x${this.settings.height}`,'-framerate',String(this.settings.fps),'-i','pipe:0'];
-    args.push('-map','0:v:0','-an',...encodingArgs(this.settings,this.encoder),'-r',String(this.settings.fps),
-      ...(this.rolling?['-bf','0','-force_key_frames','expr:gte(t,n_forced*2)','-f','segment','-segment_time','2','-segment_format','matroska',
-        '-reset_timestamps','1','-segment_list_type','csv','-segment_list_size','162','-segment_list',path.join(this.session,'video.csv')]:['-cluster_time_limit','1000','-flush_packets','1']),file);
+    args.push('-map','0:v:0','-an',...encodingArgs(this.settings,this.encoder),'-r',String(this.settings.fps),'-cluster_time_limit','1000','-flush_packets','1',file);
     this.video=new ManagedProcess(this.ffmpeg,args,`${file}.log`);
     this.pumping=true;this.framesWritten=0;this.segmentAt=performance.now();this.state='recording';this.segments.push({video:file,audios:audioFiles});
-    this.audioOffset=(this.segmentAt-audioAt)/1000;
     this.pumpTask=this.pump().catch(error=>{this.failed=error;this.pumping=false;this.onFailure(error.message);});
     await new Promise(resolve=>setTimeout(resolve,700));
     const deadline=performance.now()+10000;

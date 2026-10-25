@@ -1,13 +1,11 @@
 import packageInfo from '../package.json' with { type: 'json' };
 import { normalizeBitrate } from './recording-quality.js';
-import { normalizeReplaySeconds, normalizeReplayHotkey } from './replay-settings.js';
 
 export const INITIAL_STATE = {
   state: 'idle',
   platform: windowPlatform(),
   elapsedSeconds: 0,
-  settings: { height: 1080, fps: 60, bitrateMbps: 0, systemAudio: true, microphone: false, autoCheckUpdates: true, replaySeconds:60, replayHotkey:'Ctrl+Shift+F8' },
-  replay: {enabled:false,busy:false,saving:false,bufferedSeconds:0,message:'Off. Turn on to capture a rolling buffer.',lastClip:''},
+  settings: { height: 1080, fps: 60, bitrateMbps: 0, systemAudio: true, microphone: false, autoCheckUpdates: true },
   appVersion: packageInfo.version,
   startupEnabled: false,
   update: { status: 'idle', message: 'Check for updates.', version: '', progress: 0 },
@@ -43,8 +41,6 @@ export function formatElapsed(value) {
 export function updateSettings(current, changes) {
   const settings = { ...current, ...changes };
   settings.bitrateMbps = normalizeBitrate(settings.bitrateMbps);
-  settings.replaySeconds = normalizeReplaySeconds(settings.replaySeconds);
-  settings.replayHotkey = normalizeReplayHotkey(settings.replayHotkey);
   if (settings.height !== 1080 && settings.fps === 120) settings.fps = 60;
   return settings;
 }
@@ -67,10 +63,6 @@ export function parseStateMessage(data) {
     if (message.notice !== undefined && (!object(message.notice) || typeof message.notice.text !== 'string' ||
       !['success', 'info', 'warning', 'error'].includes(message.notice.severity))) return null;
     if (message.platform !== undefined && !['windows', 'linux'].includes(message.platform)) return null;
-    if (message.replay !== undefined && (!object(message.replay) ||
-      ['enabled','busy','saving'].some(key=>message.replay[key]!==undefined&&typeof message.replay[key]!=='boolean') ||
-      ['message','lastClip'].some(key=>message.replay[key]!==undefined&&typeof message.replay[key]!=='string') ||
-      (message.replay.bufferedSeconds!==undefined&&(!Number.isFinite(message.replay.bufferedSeconds)||message.replay.bufferedSeconds<0||message.replay.bufferedSeconds>300)))) return null;
     if (['sourceChanging','portalCapture'].some(key=>message[key]!==undefined && typeof message[key]!=='boolean')) return null;
     if (['outputFolder', 'lastOutput', 'encoder', 'appVersion', 'sourceDescription'].some((key) => message[key] !== undefined && typeof message[key] !== 'string')) return null;
     return message;
@@ -86,16 +78,10 @@ export function mergeState(previous, message) {
     settings: updateSettings(previous.settings, message.settings),
     update: { ...previous.update, ...message.update },
     captureSource: { ...previous.captureSource, ...message.captureSource },
-    replay: { ...previous.replay, ...message.replay },
     sources: Array.isArray(message.sources) ? message.sources : previous.sources,
   };
 }
 
 export function canInstallUpdate(app, sourcePending = false) {
-  return app.state === 'idle' && !sourcePending && !app.replay?.enabled && !app.replay?.busy && app.update.status === 'ready';
-}
-
-export function canToggleReplay(app, connected = true, sourcePending = false) {
-  return connected && app.update.status !== 'installing' && !sourcePending && !app.replay.busy &&
-    (app.replay.enabled || (app.state === 'idle' && app.captureSource.ready));
+  return app.state === 'idle' && !sourcePending && app.update.status === 'ready';
 }

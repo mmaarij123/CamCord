@@ -11,7 +11,7 @@ public:
     CaptureEngine();
     ~CaptureEngine();
     OperationResult Start(const std::wstring& ffmpeg, const std::wstring& output, const std::wstring& log,
-        const RecordingSettings& settings, const EncoderChoice& encoder, bool rolling = false);
+        const RecordingSettings& settings, const EncoderChoice& encoder);
     OperationResult Stop(DWORD timeoutMs = INFINITE);
     bool Running() const;
     std::chrono::steady_clock::time_point StartedAt() const { return startedAt_; }

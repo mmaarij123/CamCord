@@ -9,7 +9,6 @@
 #include "StartupManager.h"
 #include "UpdateManager.h"
 #include "CaptureSources.h"
-#include "ReplayManager.h"
 
 class MainWindow {
 public:
@@ -38,8 +37,6 @@ private:
     void BeginUpdate(UpdateAction action, bool manual = false);
     void PollUpdate();
     void InstallUpdate();
-    void BeginReplay(const std::wstring& action);
-    void PollReplay();
     HWND hwnd_ = nullptr;
     HINSTANCE instance_ = nullptr;
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> webViewController_;
@@ -72,9 +69,4 @@ private:
     std::wstring updateStatus_ = L"idle", updateMessage_ = L"Check for updates.", updateInstaller_;
     std::chrono::steady_clock::time_point nextUpdateCheck_;
     bool startupEnabled_ = false, manualUpdate_ = false, downloadWhenAvailable_ = false;
-    ReplayManager replay_;
-    std::future<ActionResult> replayTask_;
-    std::wstring replayPending_, replayMessage_ = L"Off. Turn on to capture a rolling buffer.";
-    bool replayEnabled_ = false, replayRetain_ = false;
-    std::wstring lastClip_;
 };

@@ -2,7 +2,6 @@
 #include <windows.h>
 #include <json.hpp>
 #include "RecordingQuality.h"
-#include "ReplaySettings.h"
 
 // Parse once and read only root fields/the explicit settings object. Searching
 // text for a key confuses escaped strings, nested keys and malformed JSON.
@@ -45,12 +44,6 @@ public:
         settings.systemAudio = Boolean(data, "systemAudio", settings.systemAudio);
         settings.microphone = Boolean(data, "microphone", settings.microphone);
         settings.autoCheckUpdates = Boolean(data, "autoCheckUpdates", settings.autoCheckUpdates);
-        settings.replaySeconds = NormalizeReplaySeconds(Integer(data, "replaySeconds", settings.replaySeconds));
-        const auto hotkey = data.find("replayHotkey");
-        if (hotkey != data.end() && hotkey->is_string()) {
-            const auto value = hotkey->get<std::string>();
-            settings.replayHotkey = NormalizeReplayHotkey(std::wstring(value.begin(), value.end()));
-        }
         return settings;
     }
 private:

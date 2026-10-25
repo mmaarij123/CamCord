@@ -34,9 +34,10 @@ test('strict quality, shared bitrate recommendations and hardware flags',()=>{
 test('Unicode settings persist atomically without stale capture handles',async t=>{
   const root=await fixture(t),file=path.join(root,'config','settings.json'),folder=path.join(root,"ریکارڈنگ 🎬 O'Brien");
   await writableFolder(folder);
-  await atomicJson(file,{settings:{...DEFAULT_SETTINGS,bitrateMbps:100,microphone:true,captureTarget:{id:42}},outputFolder:folder});
+  await atomicJson(file,{settings:{...DEFAULT_SETTINGS,bitrateMbps:100,microphone:true,captureTarget:{id:42},replaySeconds:300,replayHotkey:'Ctrl+Shift+F8'},replay:{enabled:true},outputFolder:folder});
   const loaded=await loadPreferences(file,'fallback');assert.equal(loaded.outputFolder,folder);assert.equal(loaded.settings.bitrateMbps,100);
   assert.equal(loaded.settings.captureTarget,undefined);
+  assert.equal(loaded.settings.replaySeconds,undefined);assert.equal(loaded.settings.replayHotkey,undefined);assert.equal(loaded.replay,undefined);
   assert.rejects(writableFolder('relative-location'));
   await writeFile(file,'invalid JSON');assert.deepEqual((await loadPreferences(file,folder)).settings,DEFAULT_SETTINGS);
 });

@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pipewire \
     ffmpeg pulseaudio pulseaudio-utils xdg-desktop-portal xdg-utils pkexec \
     libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libdrm2 libx11-6 libxcomposite1 libxrandr2 \
-    libatk-bridge2.0-0 libatspi2.0-0 libxkbcommon0 libcups2 libxtst6 xvfb xauth openbox picom dbus-x11 \
+    libatk-bridge2.0-0 libatspi2.0-0 libxkbcommon0 libcups2 xvfb xauth openbox picom dbus-x11 \
     && apt-get clean
 WORKDIR /workspace
 COPY linux/package*.json linux/

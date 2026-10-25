@@ -63,8 +63,8 @@ std::wstring OutputManager::NewSessionFolder() const {
     std::error_code ec;
     std::filesystem::create_directories(parent, ec);
     if(ec)return L"";
-    // Manual recording and replay snapshots have independent workers. A timestamp
-    // alone can collide in the same millisecond and make one cleanup erase the other.
+    // Keep session creation exclusive even for simultaneous callers. A timestamp
+    // alone can collide in the same millisecond and make cleanup affect another session.
     for(int attempt=0;attempt<100;attempt++) {
         const auto path=parent/(Timestamp()+L"_"+std::to_wstring(GetCurrentProcessId())+L"_"+std::to_wstring(GetTickCount64())+L"_"+std::to_wstring(serial.fetch_add(1)));
         if(CreateDirectoryW(path.c_str(),nullptr))return path.wstring();

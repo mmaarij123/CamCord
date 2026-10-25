@@ -34,7 +34,6 @@
     <ClCompile Include="src\AudioCaptureEngine.cpp" /><ClCompile Include="src\CaptureEngine.cpp" /><ClCompile Include="src\RecordingManager.cpp" />
     <ClCompile Include="src\UpdateManager.cpp" /><ClCompile Include="src\StartupManager.cpp" />
     <ClCompile Include="src\CaptureSources.cpp" />
-    <ClCompile Include="src\ReplayManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\MainWindow.h" /><ClInclude Include="src\OutputManager.h" /><ClInclude Include="src\SettingsManager.h" />
@@ -44,7 +43,6 @@
     <ClInclude Include="src\RecordingQuality.h" /><ClInclude Include="src\VideoEncoding.h" />
     <ClInclude Include="src\CaptureSources.h" />
     <ClInclude Include="src\HostMessage.h" />
-    <ClInclude Include="src\ReplayManager.h" /><ClInclude Include="src\ReplaySettings.h" />
   </ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><ResourceCompile Include="resources.rc" /></ItemGroup>

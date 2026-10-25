@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { packager } from '@electron/packager';
-import './prepare-shared.mjs';
+import { sharedFiles } from './prepare-shared.mjs';
 
 if(process.platform!=='linux' || process.arch!=='x64')throw new Error('Build the Debian package on Linux x64 (use the supplied Dockerfile).');
 const root=fileURLToPath(new URL('../../',import.meta.url)),linux=path.join(root,'linux'),out=path.join(linux,'out');
@@ -16,7 +16,9 @@ const command=(exe,args,cwd=root)=>new Promise((resolve,reject)=>{
 await command('npm',['ci','--no-audit','--no-fund'],path.join(root,'ui'));
 await command('npm',['run','build'],path.join(root,'ui'));
 await mkdir(out,{recursive:true});const stage=await mkdtemp(path.join(out,'app-build-'));
-for(const directory of ['src','shared'])await cp(path.join(linux,directory),path.join(stage,directory),{recursive:true});
+await cp(path.join(linux,'src'),path.join(stage,'src'),{recursive:true});
+await mkdir(path.join(stage,'shared'));
+for(const file of sharedFiles)await cp(path.join(linux,'shared',file),path.join(stage,'shared',file));
 await cp(path.join(linux,'package.json'),path.join(stage,'package.json'));
 await cp(path.join(root,'ui','dist'),path.join(stage,'ui'),{recursive:true});
 for(const file of ['LICENSE','README.md','THIRD_PARTY_NOTICES.md'])await cp(path.join(root,file),path.join(stage,file));

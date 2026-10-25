@@ -9,9 +9,6 @@
 #include <chrono>
 #include <algorithm>
 #include <cstdint>
-#include <iomanip>
-#include <sstream>
-#include <memory>
 
 namespace {
 // RF64 uses 64-bit sizes in ds64, so a long PCM capture cannot wrap at 4 GiB.
@@ -79,47 +76,6 @@ uint64_t Qpc100ns() {
         + static_cast<uint64_t>((counter.QuadPart % frequency.QuadPart) * 10000000ull / frequency.QuadPart);
 }
 
-// Split PCM by sample count without reopening WASAPI or losing packet boundaries.
-// A .done marker is published only after the RF64 header has been finalized.
-class AudioFiles {
-public:
-    bool Open(const std::wstring& path, const WAVEFORMATEX* format, bool rolling) {
-        path_ = path; format_ = format; rolling_ = rolling;
-        limit_ = rolling ? static_cast<uint64_t>(format->nSamplesPerSec) * format->nBlockAlign * 2 : UINT64_MAX;
-        return Next();
-    }
-    bool Write(const BYTE* data, uint64_t bytes) { return Put(data, bytes, false); }
-    bool Silence(uint64_t bytes) { return Put(nullptr, bytes, true); }
-    bool Close() {
-        if (!wave_) return true;
-        const bool ok = wave_->Close(); wave_.reset();
-        if (ok && rolling_ && used_) { std::ofstream marker(std::filesystem::path(current_ + L".done")); if (!marker) return false; }
-        return ok;
-    }
-private:
-    bool Next() {
-        if (rolling_) { std::wostringstream name; name << path_ << L"_" << std::setfill(L'0') << std::setw(9) << index_++ << L".wav"; current_ = name.str(); }
-        else current_ = path_;
-        used_ = 0; wave_ = std::make_unique<WaveFile>(); return wave_->Open(current_, format_);
-    }
-    bool Put(const BYTE* data, uint64_t bytes, bool silence) {
-        while (bytes) {
-            if (used_ == limit_ && (!Close() || !Next())) return false;
-            const auto count = static_cast<UINT32>(std::min<uint64_t>(bytes, std::min<uint64_t>(limit_ - used_, UINT32_MAX)));
-            if (!(silence ? wave_->Silence(count) : wave_->Write(data, count))) return false;
-            used_ += count; bytes -= count; if (data) data += count;
-        }
-        // Finalize full chunks immediately, including silent ones, for clip snapshots.
-        if (rolling_ && used_ == limit_) return Close() && Next();
-        return true;
-    }
-    std::unique_ptr<WaveFile> wave_;
-    const WAVEFORMATEX* format_ = nullptr;
-    std::wstring path_, current_;
-    uint64_t used_ = 0, limit_ = 0, index_ = 0;
-    bool rolling_ = false;
-};
-
 uint64_t TimelineFrame(uint64_t packet100ns, uint64_t start100ns, UINT32 sampleRate) {
     if (packet100ns <= start100ns) return 0;
     const auto ticks = packet100ns - start100ns;
@@ -138,10 +94,10 @@ void AudioCaptureEngine::SetError(const std::wstring& message) {
     failed_ = true;
 }
 
-OperationResult AudioCaptureEngine::Start(bool loopback, const std::wstring& wavPath, bool rolling) {
+OperationResult AudioCaptureEngine::Start(bool loopback, const std::wstring& wavPath) {
     Stop(); stop_ = false; started_ = false; capturedAudio_ = false; finished_ = false; failed_ = false;
     { std::lock_guard<std::mutex> lock(errorMutex_); lastError_.clear(); }
-    try { thread_ = std::thread(&AudioCaptureEngine::CaptureThread, this, loopback, wavPath, rolling); }
+    try { thread_ = std::thread(&AudioCaptureEngine::CaptureThread, this, loopback, wavPath); }
     catch (const std::exception&) { return OperationResult::Failure(L"An audio capture thread could not be started."); }
     for (int i = 0; i < 200 && !started_ && !finished_; ++i) Sleep(10);
     if (!started_ || failed_) {
@@ -157,7 +113,7 @@ void AudioCaptureEngine::Stop() {
     started_ = false;
 }
 
-void AudioCaptureEngine::CaptureThread(bool loopback, std::wstring path, bool rolling) {
+void AudioCaptureEngine::CaptureThread(bool loopback, std::wstring path) {
     const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     ComPtr<IMMDeviceEnumerator> enumerator; ComPtr<IMMDevice> device; ComPtr<IAudioClient> client; ComPtr<IAudioCaptureClient> capture;
     WAVEFORMATEX* format = nullptr; HANDLE mmcss = nullptr; DWORD task = 0;
@@ -173,8 +129,8 @@ void AudioCaptureEngine::CaptureThread(bool loopback, std::wstring path, bool ro
             const DWORD flags = loopback ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0;
             if (FAILED(client->Initialize(AUDCLNT_SHAREMODE_SHARED, flags, 10000000, 0, format, nullptr))) { SetError(L"Audio capture initialization failed."); break; }
             if (FAILED(client->GetService(__uuidof(IAudioCaptureClient), reinterpret_cast<void**>(capture.put())))) { SetError(L"Audio capture service is unavailable."); break; }
-            AudioFiles wave;
-            if (!wave.Open(path, format, rolling)) { SetError(L"The temporary audio file could not be written."); break; }
+            WaveFile wave;
+            if (!wave.Open(path, format)) { SetError(L"The temporary audio file could not be written."); break; }
             mmcss = AvSetMmThreadCharacteristicsW(L"Audio", &task);
             const auto origin = Qpc100ns(); startedAt_ = std::chrono::steady_clock::now();
             if (FAILED(client->Start())) { SetError(L"The audio device could not start."); break; }
@@ -189,10 +145,7 @@ void AudioCaptureEngine::CaptureThread(bool loopback, std::wstring path, bool ro
             while (!stop_ && !failed_) {
                 UINT32 packets = 0;
                 if (FAILED(capture->GetNextPacketSize(&packets))) { SetError(L"An audio device was disconnected during recording."); break; }
-                if (!packets) {
-                    if (rolling && !writeGap(TimelineFrame(Qpc100ns(), origin, format->nSamplesPerSec))) SetError(L"Writing replay audio failed. Check the recording drive.");
-                    Sleep(4); continue;
-                }
+                if (!packets) { Sleep(4); continue; }
                 while (packets && !stop_ && !failed_) {
                     BYTE* data = nullptr; UINT32 frames = 0; DWORD bufferFlags = 0;
                     UINT64 devicePosition = 0, packetQpc = 0;

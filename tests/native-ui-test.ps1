@@ -8,7 +8,7 @@ $build = Join-Path $projectRoot 'obj\native-ui-tests'
 New-Item -ItemType Directory -Path $build -Force | Out-Null
 $sources = @('tests\native_ui_tests.cpp','src\MainWindow.cpp','src\RecordingManager.cpp','src\AudioCaptureEngine.cpp',
     'src\CaptureEngine.cpp','src\CaptureSources.cpp','src\Process.cpp','src\OutputManager.cpp',
-    'src\HardwareEncoderDetector.cpp','src\SettingsManager.cpp','src\StartupManager.cpp','src\UpdateManager.cpp','src\ReplayManager.cpp')
+    'src\HardwareEncoderDetector.cpp','src\SettingsManager.cpp','src\StartupManager.cpp','src\UpdateManager.cpp')
 $quotedSources = ($sources | ForEach-Object { '"' + (Join-Path $projectRoot $_) + '"' }) -join ' '
 Push-Location $build
 try {

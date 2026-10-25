@@ -103,6 +103,14 @@ int wmain(int argc, wchar_t** argv) {
         Check(actual.height == expected.height && actual.width == expected.width && actual.fps == expected.fps &&
             actual.systemAudio == expected.systemAudio && actual.microphone == expected.microphone &&
             actual.outputFolder == expected.outputFolder, "Unicode settings did not round-trip exactly");
+        Check(WritePrivateProfileStringW(L"Replay",L"Seconds",L"300",settingsPath.c_str())!=FALSE &&
+            WritePrivateProfileStringW(L"Replay",L"Hotkey",L"Ctrl+Shift+F8",settingsPath.c_str())!=FALSE,"Could not seed isolated old clipping preferences");
+        const auto legacy=settings.Load();
+        Check(legacy.height==expected.height&&legacy.fps==expected.fps&&legacy.outputFolder==expected.outputFolder,
+            "Old clipping preferences changed normal recording settings");
+        Check(settings.Save(legacy).ok,"Could not migrate isolated old preferences");
+        wchar_t obsolete[32]{};GetPrivateProfileStringW(L"Replay",L"Seconds",L"removed",obsolete,32,settingsPath.c_str());
+        Check(std::wstring(obsolete)==L"removed","Removed clipping preferences were persisted again");
         const auto savedBytes = Bytes(settingsPath);
         Check(savedBytes.size() >= 2 && savedBytes[0] == 0xff && savedBytes[1] == 0xfe,
             "Unicode settings did not retain the UTF-16 BOM");

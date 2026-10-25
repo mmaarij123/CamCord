@@ -2,9 +2,8 @@ import { mkdir, readFile, rename, writeFile, unlink, stat, open, statfs } from '
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { normalizeBitrate } from '../shared/recording-quality.js';
-import { normalizeReplaySeconds, normalizeReplayHotkey } from '../shared/replay-settings.js';
 
-export const DEFAULT_SETTINGS = Object.freeze({height:1080, fps:60, bitrateMbps:0, systemAudio:true, microphone:false, autoCheckUpdates:true, replaySeconds:60, replayHotkey:'Ctrl+Shift+F8'});
+export const DEFAULT_SETTINGS = Object.freeze({height:1080, fps:60, bitrateMbps:0, systemAudio:true, microphone:false, autoCheckUpdates:true});
 export function normalizeSettings(current, changes = {}) {
   const next = { ...current };
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return next;
@@ -12,8 +11,6 @@ export function normalizeSettings(current, changes = {}) {
   if (Number.isInteger(changes.fps)) next.fps = [15,30,60,120].includes(changes.fps) ? changes.fps : 60;
   if (next.height !== 1080 && next.fps === 120) next.fps = 60;
   if (Number.isInteger(changes.bitrateMbps)) next.bitrateMbps = normalizeBitrate(changes.bitrateMbps);
-  if (Number.isInteger(changes.replaySeconds)) next.replaySeconds = normalizeReplaySeconds(changes.replaySeconds);
-  if (typeof changes.replayHotkey === 'string') next.replayHotkey = normalizeReplayHotkey(changes.replayHotkey);
   for (const key of ['systemAudio','microphone','autoCheckUpdates']) if (typeof changes[key] === 'boolean') next[key] = changes[key];
   return next;
 }

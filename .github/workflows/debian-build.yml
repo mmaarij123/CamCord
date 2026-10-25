@@ -2,7 +2,7 @@ name: Build and test Debian package
 
 on:
   push:
-    branches: ["codex/debian-port", "codex/instant-replay"]
+    branches: ["codex/debian-port"]
   workflow_dispatch:
   workflow_call:
 
