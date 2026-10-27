@@ -105,10 +105,17 @@ OperationResult ResolveCaptureTarget(CaptureTarget& target) {
     return OperationResult::Success();
 }
 
-std::wstring CaptureInputFilter(const CaptureTarget& target, int fps) {
+std::wstring CaptureInputFilter(const CaptureTarget& target, int fps, int width, int height) {
     std::wstring filter = L"gfxcapture=";
     filter += target.kind == CaptureKind::Window ? L"hwnd=" : L"hmonitor=";
-    filter += std::to_wstring(target.handle) + L":capture_cursor=0:output_fmt=bgra:max_framerate=" + std::to_wstring(fps);
-    if (target.kind == CaptureKind::Window) filter += L":capture_border=0:resize_mode=scale_aspect";
+    // This is a compositor cap, not a CFR clock. Leave headroom so e.g. a
+    // 200 Hz desktop is not undersampled while producing a 120 FPS recording.
+    // The bounded bridge supplies the requested recording cadence.
+    filter += std::to_wstring(target.handle) + L":capture_cursor=0:output_fmt=bgra:max_framerate=" + std::to_wstring(fps * 2);
+    if (target.kind == CaptureKind::Window) filter += L":capture_border=0";
+    // Resize on the capture GPU before downloading pixels. This also keeps the
+    // canvas stable when a window resizes; aspect ratio and black bars survive.
+    if (width && height) filter += L":width=" + std::to_wstring(width) + L":height=" + std::to_wstring(height)
+        + L":resize_mode=scale_aspect:scale_mode=bicubic";
     return filter;
 }

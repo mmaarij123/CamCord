@@ -27,10 +27,10 @@ static void Pump(DWORD duration) {
 }
 
 int wmain(int argc, wchar_t** argv) {
-    // Owned fake FFmpeg: produces only synthetic BGRA bytes and simulates an
+    // Owned fake FFmpeg: produces only synthetic YUV420 bytes and simulates an
     // encoder that never consumes stdin. No user screen/audio is accessed.
     if (argc > 3 && std::wstring(argv[1]) == L"-hide_banner") {
-        std::vector<BYTE> frame(640 * 360 * 4, 128);
+        std::vector<BYTE> frame(640 * 360 * 3 / 2, 128);
         for (;;) {
             DWORD written = 0;
             if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), frame.data(), static_cast<DWORD>(frame.size()), &written, nullptr)) return 0;
@@ -50,6 +50,9 @@ int wmain(int argc, wchar_t** argv) {
         CaptureTarget display; display.handle = 42; display.sourceWidth = 1920; display.sourceHeight = 1080;
         Check(CaptureInputFilter(display, 30).find(L"hmonitor=42") != std::wstring::npos, "Display selection ignored explicit monitor handle");
         Check(CaptureInputFilter(display, 30).find(L"crop_") == std::wstring::npos, "Display capture still applies an area crop");
+        const auto scaled = CaptureInputFilter(display, 60, 1280, 720);
+        Check(scaled.find(L":width=1280:height=720:resize_mode=scale_aspect:scale_mode=bicubic") != std::wstring::npos,
+            "Capture does not scale on the GPU into an aspect-preserving output canvas");
         auto removed = display; removed.kind = static_cast<CaptureKind>(2);
         Check(!ResolveCaptureTarget(removed).ok, "Removed/unsupported capture kind was accepted");
         std::cout << "PASS: selected display handle, full-display capture, removed capture kind rejected\n";
@@ -73,6 +76,10 @@ int wmain(int argc, wchar_t** argv) {
             RecordingSettings syntheticSettings; syntheticSettings.width = 640; syntheticSettings.height = 360;
             syntheticSettings.fps = 30; syntheticSettings.systemAudio = syntheticSettings.microphone = false;
             syntheticSettings.captureTarget = CaptureWindowTarget(fixture);
+            CaptureEngine invalidSize;
+            auto odd = syntheticSettings; --odd.width;
+            Check(!invalidSize.Start(argv[1], (root / L"odd.mp4").wstring(), (root / L"odd.log").wstring(), odd, testEncoder).ok,
+                "Odd YUV420 dimensions were accepted");
             std::vector<wchar_t> executable(32768);
             const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
             Check(length && length < executable.size(), "Cannot locate synthetic bridge fixture");
@@ -106,6 +113,8 @@ int wmain(int argc, wchar_t** argv) {
             // Change the selected window while it is occluded: proves that the
             // capture updates the window surface, not merely the first frame.
             SetWindowLongPtrW(fixture, GWLP_USERDATA, 2);
+            // Resize a 16:9 source to 4:3 while recording into a fixed canvas.
+            SetWindowPos(fixture, nullptr, 0, 0, 640, 480, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
             InvalidateRect(fixture, nullptr, FALSE); UpdateWindow(fixture);
             Pump(900);
             auto stopTask = std::async(std::launch::async, [&] { return capture.Stop(12000); });
@@ -118,6 +127,13 @@ int wmain(int argc, wchar_t** argv) {
             std::ifstream input(pixel, std::ios::binary); unsigned char rgb[3]{}; input.read(reinterpret_cast<char*>(rgb), 3);
             Check(input.gcount() == 3 && rgb[1] > 100 && rgb[0] < 60 && rgb[2] < 60,
                 "Occluded capture did not update to green; it recorded the cover/desktop or froze on the first blue frame");
+            const auto border = root / L"border.rgb";
+            Check(ChildProcess::Run(argv[1], L"-y -hide_banner -loglevel error -sseof -0.2 -i " + QuoteArg(video.wstring())
+                + L" -frames:v 1 -vf crop=2:2:iw-2:ih/2,scale=1:1 -pix_fmt rgb24 -f rawvideo " + QuoteArg(border.wstring()),
+                (root / L"border.log").wstring()) == 0, "Could not decode resized capture border");
+            std::ifstream borderInput(border, std::ios::binary); unsigned char black[3]{}; borderInput.read(reinterpret_cast<char*>(black), 3);
+            Check(borderInput.gcount() == 3 && black[0] < 12 && black[1] < 12 && black[2] < 12,
+                "GPU resizing stretched/cropped the source instead of preserving aspect ratio with black bars");
             // Also start a fresh recording with the window already occluded.
             CaptureEngine second;
             const auto secondVideo = root / L"already-occluded.mp4";
@@ -131,7 +147,7 @@ int wmain(int argc, wchar_t** argv) {
             Check(secondStop.get().ok, "Closed-window capture did not finish safely");
             Check(ChildProcess::Run(argv[1], L"-hide_banner -loglevel error -xerror -i " + QuoteArg(secondVideo.wstring())
                 + L" -f null NUL", (root / L"already-occluded.decode.log").wstring()) == 0, "Closed-window recording is not decodable");
-            std::cout << "PASS: occluded window updates from blue to green behind a red cover; static/closed capture drains cleanly; already-occluded startup works\n";
+            std::cout << "PASS: occluded/resized window updates behind a cover with correct black bars; static/closed capture drains cleanly; already-occluded startup works\n";
         }
         if (fixture) { DestroyWindow(fixture); fixture = nullptr; }
         auto closed = window;

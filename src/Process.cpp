@@ -47,7 +47,9 @@ bool ChildProcess::Start(const std::wstring& executable, const std::wstring& arg
     HANDLE stdinRead = nullptr;
     HANDLE nullInput = nullptr;
     if (interactive) {
-        if (!CreatePipe(&stdinRead, &stdinWrite_, &sa, 0)) { CloseHandle(log); return false; }
+        // Raw frames are several MiB each. The default small pipe forces many
+        // synchronous reader/writer handoffs per frame at 60/120 FPS.
+        if (!CreatePipe(&stdinRead, &stdinWrite_, &sa, rawInput ? 1024 * 1024 : 0)) { CloseHandle(log); return false; }
         if (!SetHandleInformation(stdinWrite_, HANDLE_FLAG_INHERIT, 0)) {
             CloseHandle(stdinRead); CloseHandle(stdinWrite_); stdinWrite_ = nullptr; CloseHandle(log); return false;
         }

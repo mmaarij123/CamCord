@@ -79,7 +79,8 @@ int wmain(int argc, wchar_t** argv) {
                 (root / L"blocked-input.log").wstring(), true, nullptr, true), "Could not start blocked-input fixture");
             std::atomic<bool> cancelled{false}, entered{false};
             bool wrote = true;
-            std::vector<BYTE> frame(1024 * 1024);
+            // Exceed the enlarged raw-input pipe so this fixture really blocks.
+            std::vector<BYTE> frame(4 * 1024 * 1024);
             std::thread writer([&] { entered = true; wrote = blocked.WriteInput(frame.data(), static_cast<DWORD>(frame.size()), &cancelled); });
             while (!entered) Sleep(1);
             const auto began = GetTickCount64();

@@ -16,6 +16,9 @@ public:
     bool Running() const;
     std::chrono::steady_clock::time_point StartedAt() const { return startedAt_; }
 private:
+    friend struct CaptureEngineTestAccess;
+    OperationResult StartStream(const std::wstring& ffmpeg, const std::wstring& output, const std::wstring& log,
+        const RecordingSettings& settings, const EncoderChoice& encoder, const std::wstring& sourceArgs);
     struct StreamBridge;
     ChildProcess process_;
     std::unique_ptr<StreamBridge> bridge_;

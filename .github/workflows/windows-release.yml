@@ -58,6 +58,9 @@ jobs:
       - name: Test Screen and Window capture-source validation
         shell: pwsh
         run: .\tests\source-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe
+      - name: Test moving-frame cadence through the real capture bridge
+        shell: pwsh
+        run: .\tests\capture-performance-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe
       - name: Test recording finalization and recovery
         shell: pwsh
         run: .\tests\pipeline-test.ps1 -Ffmpeg .\bin\Release\ffmpeg.exe

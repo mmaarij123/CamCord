@@ -4,7 +4,6 @@
 #include "CaptureSources.h"
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 
 RecordingManager::RecordingManager() = default;
 
@@ -68,9 +67,6 @@ OperationResult RecordingManager::StartSegment() {
         auto result = microphone_->Start(false, seg.microphone);
         if (!result.ok) { systemAudio_->Stop(); systemAudio_.reset(); microphone_.reset(); return Failure(result.message); }
     }
-    const auto videoLaunch = std::chrono::steady_clock::now();
-    if (settings_.systemAudio) seg.systemTrimMs = std::chrono::duration_cast<std::chrono::milliseconds>(videoLaunch - systemAudio_->StartedAt()).count();
-    if (settings_.microphone) seg.micTrimMs = std::chrono::duration_cast<std::chrono::milliseconds>(videoLaunch - microphone_->StartedAt()).count();
     auto video = capture_->Start(ffmpeg_, seg.video, seg.log, settings_, encoder_);
     if (!video.ok) { systemAudio_->Stop(); microphone_->Stop(); capture_.reset(); return Failure(video.message); }
     const auto videoStarted = capture_->StartedAt();

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.3 — 2026-10-27
+
+- Improved Windows frame pacing with a precise waitable timer and a small, bounded jitter buffer.
+- Reused capture buffers, enlarged raw-video pipes, and reduced each transferred frame from BGRA to the H.264 YUV420 layout.
+- Moved aspect-preserving resizing onto the capture GPU and allowed capture-rate headroom for high-refresh displays.
+- Removed unused capture-source styling, helpers, imports and overwritten audio-trim calculations.
+- Added moving-frame encode/decode cadence checks to Windows release CI. Instant Replay remains removed.
+
 ## 1.4.0 — 2026-10-08
 
 - Added automatic stable-release checks and background update downloads from GitHub, with checksum verification and progress.

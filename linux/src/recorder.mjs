@@ -2,7 +2,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, mkdtemp, readFile, writeFile, stat, rm, link } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
-import { once } from 'node:events';
 import { ManagedProcess, run } from './process.mjs';
 import { writableFolder, normalizeSettings, DEFAULT_SETTINGS } from './preferences.mjs';
 import { videoBitrateKbps, videoPeakMbps } from '../shared/recording-quality.js';

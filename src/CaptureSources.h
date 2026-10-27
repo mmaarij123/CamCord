@@ -14,4 +14,4 @@ CaptureTarget CaptureWindowTarget(HWND window);
 std::wstring CaptureSourceId(const CaptureTarget& target);
 bool CaptureSourceExists(const CaptureTarget& target);
 OperationResult ResolveCaptureTarget(CaptureTarget& target);
-std::wstring CaptureInputFilter(const CaptureTarget& target, int fps);
+std::wstring CaptureInputFilter(const CaptureTarget& target, int fps, int width = 0, int height = 0);
