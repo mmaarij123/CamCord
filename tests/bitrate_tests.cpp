@@ -31,9 +31,13 @@ int wmain(int argc, wchar_t** argv) {
         }
         std::cout << "PASS: original Auto targets and invalid bitrate normalization\n";
         for (const int height : {1440, 2160}) {
-            settings.height = height; settings.width = RecordingWidth(height); settings.fps = 60; settings.bitrateMbps = 0;
-            Check(VideoBitrateKbps(settings) == (height == 1440 ? 32000 : 64000), "High-resolution Auto bitrate is wrong");
+          for (const int fps : {15, 30, 60}) {
+            settings.height = height; settings.width = RecordingWidth(height); settings.fps = fps; settings.bitrateMbps = 0;
+            const int expectedKbps = height == 1440 ? (fps == 15 ? 12000 : fps == 30 ? 20000 : 32000)
+                : (fps == 15 ? 24000 : fps == 30 ? 40000 : 64000);
+            Check(VideoBitrateKbps(settings) == expectedKbps, "High-resolution Auto bitrate is wrong");
             Check(VideoPeakBitrateKbps(settings) <= MAX_VIDEO_BITRATE_KBPS, "High-resolution peak exceeds bitrate ceiling");
+          }
         }
         settings.height = argc == 4 ? 1080 : 720;
         settings.width = argc == 4 ? 1920 : 1280;

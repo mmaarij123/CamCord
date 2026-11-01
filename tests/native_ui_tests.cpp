@@ -36,6 +36,16 @@ struct MainWindowTestAccess {
             app.HandleWebMessage(LR"({"type":"sourceMode","kind":"window"})");
             Check(app.settings_.captureTarget.kind == CaptureKind::Window && app.settings_.captureTarget.handle == 0,
                 "Window mode must require explicit source selection");
+            app.webReady_ = true;
+            app.updateStatus_ = L"ready";
+            app.updateInstaller_ = L"verified-test-marker.exe";
+            app.nextUpdateCheck_ = std::chrono::steady_clock::now() - std::chrono::hours(1);
+            app.PollUpdate();
+            Check(app.updateAction_ == MainWindow::UpdateAction::None && !app.updateTask_.valid()
+                && app.updateStatus_ == L"ready" && app.updateInstaller_ == L"verified-test-marker.exe",
+                "Periodic checks discarded a ready update before the user installed it");
+            app.webReady_ = false;
+            app.updateStatus_ = L"idle";
             app.folderDialogOpen_ = true;
             Check(!SendMessageW(fixture, WM_QUERYENDSESSION, 0, 0), "Shutdown accepted during modal selection");
             SendMessageW(fixture, WM_CLOSE, 0, 0);
@@ -52,7 +62,7 @@ struct MainWindowTestAccess {
             Check(!IsWindow(fixture), "Close did not complete after modal selection ended");
             MSG quit{}; PeekMessageW(&quit, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE);
         }
-        std::cout << "PASS: removed area commands ignored; Screen/Window modes work; folder modal close/shutdown/install guards preserved\n";
+        std::cout << "PASS: removed commands ignored; Screen/Window modes work; ready updates retained; modal close/shutdown/install guards preserved\n";
     }
 };
 

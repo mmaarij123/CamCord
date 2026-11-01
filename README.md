@@ -6,7 +6,7 @@ A lightweight screen recorder for every capture you imagine. Available on Window
 
 - **Capture source:** record a chosen display or an individual window. Window capture works behind other windows.
 - **Recording quality:** choose 480p, 720p, 1080p, 2K (2560 × 1440) or 4K (3840 × 2160).
-- **Frame rates:** record at 15, 30 or 60 FPS up to 1080p, with 120 FPS at 1080p on supported hardware. 2K and 4K record at 60 FPS.
+- **Frame rates:** record at 15, 30 or 60 FPS at every resolution, including 2K and 4K. 120 FPS is available at 1080p on supported hardware.
 - **Video bitrate:** Auto, or choose 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 50, 64, 75 or 100 Mbps. See estimated storage use; 32 Mbps and higher show a storage warning. Your choice is remembered.
 - **Audio options:** capture system audio, your microphone, both, or video only.
 - **Pause and resume:** take breaks and save the recording as one video.
@@ -62,7 +62,7 @@ On **Wayland**, install your desktop's matching portal backend if it is missing 
 
 System audio records all desktop playback, not only the selected window. Capture-source permissions/selections are not remembered across restarts; quality, bitrate, save location and other settings are preserved. Protected apps may refuse capture.
 
-2K/60 uses a 32 Mbps Auto video target; 4K/60 uses 64 Mbps. You can also choose a manual bitrate up to 100 Mbps. Higher resolutions need more GPU power and storage. For native 2K/4K detail, select a source at that resolution or higher; smaller sources are upscaled.
+At 15/30/60 FPS, Auto uses 12/20/32 Mbps for 2K and 24/40/64 Mbps for 4K. You can also choose a manual bitrate up to 100 Mbps. Higher resolutions need more GPU power and storage. For native 2K/4K detail, select a source at that resolution or higher; smaller sources are upscaled.
 
 In-app updates require a new stable GitHub release with a higher version and the matching platform installer. Pushing source changes alone does not update installed apps.
 

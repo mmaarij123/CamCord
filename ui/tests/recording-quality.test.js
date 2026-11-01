@@ -13,25 +13,34 @@ test('all bitrate presets are valid and malformed/out-of-range values become Aut
 
 test('Auto retains existing resolution/FPS targets and suggests a nearby manual preset', () => {
   for (const [height, fps, kbps] of [[480,15,2500],[480,30,3500],[480,60,5000],
-    [720,15,4000],[720,30,5500],[720,60,8000],[1080,15,6000],[1080,30,9000],[1080,60,14000],[1080,120,24000],[1440,60,32000],[2160,60,64000]]) {
+    [720,15,4000],[720,30,5500],[720,60,8000],[1080,15,6000],[1080,30,9000],[1080,60,14000],[1080,120,24000],
+    [1440,15,12000],[1440,30,20000],[1440,60,32000],[2160,15,24000],[2160,30,40000],[2160,60,64000]]) {
     const settings = { height, fps, bitrateMbps: 0 };
     assert.equal(videoBitrateKbps(settings), kbps);
     assert.ok(suggestedBitrate(settings) >= kbps / 1000);
   }
 });
 
-test('2K/4K selection, restored state and changed FPS keep the exact 60 FPS output profile', () => {
+test('2K/4K preserve 15/30/60 FPS on selection and restore; unsupported rates fall back to 60', () => {
   for (const [height, width] of [[1440,2560],[2160,3840]]) {
     assert.equal(recordingWidth(height), width);
-    assert.deepEqual(frameRatesForHeight(height), [60]);
-    for (const fps of [15,30,60,120,999]) {
+    assert.deepEqual(frameRatesForHeight(height), [15,30,60]);
+    for (const fps of [15,30,60,120,999,'30',null]) {
+      const expectedFps = [15,30,60].includes(fps) ? fps : 60;
       const settings = updateSettings({...INITIAL_STATE.settings, fps:120, bitrateMbps:100}, {height,fps});
-      assert.equal(settings.height, height); assert.equal(settings.fps, 60); assert.equal(settings.bitrateMbps,100);
+      assert.equal(settings.height, height); assert.equal(settings.fps, expectedFps); assert.equal(settings.bitrateMbps,100);
       const restored = mergeState(INITIAL_STATE, {state:'idle',settings:{height,fps}});
-      assert.equal(restored.settings.height,height); assert.equal(restored.settings.fps,60);
+      assert.equal(restored.settings.height,height); assert.equal(restored.settings.fps,expectedFps);
     }
     const storage = storageEstimate({...INITIAL_STATE.settings,height,bitrateMbps:0});
     assert.ok(storage.mbPerMinute > 240);
+  }
+});
+
+test('resolution changes preserve supported frame rates and normalize 1080p120', () => {
+  for (const height of [480,720,1080,1440,2160]) {
+    for (const fps of [15,30,60]) assert.equal(updateSettings({...INITIAL_STATE.settings,fps},{height}).fps,fps);
+    assert.equal(updateSettings({...INITIAL_STATE.settings,fps:120},{height}).fps,height === 1080 ? 120 : 60);
   }
 });
 

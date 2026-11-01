@@ -9,7 +9,6 @@ import ctypes as C
 import json
 import os
 import re
-import select
 import signal
 import sys
 import threading
@@ -173,7 +172,7 @@ def command_reader(stop, paused, dispatch=None):
 
 
 def capture_x11(args):
-    Gst, GLib, _ = gst_modules()
+    Gst, _, _ = gst_modules()
     desktop = X11(); stop = threading.Event(); paused = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
@@ -395,7 +394,7 @@ def main():
         finally: desktop.close()
     else:
         if (not args.kind or (args.width, args.height) not in [(854, 480), (1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)]
-                or args.fps not in [15, 30, 60, 120] or (args.height >= 1440 and args.fps != 60)
+                or args.fps not in [15, 30, 60, 120]
                 or (args.fps == 120 and args.height != 1080)):
             raise RuntimeError('Invalid recording settings.')
         (capture_portal if args.portal else capture_x11)(args)
@@ -403,6 +402,6 @@ def main():
 
 if __name__ == '__main__':
     try: main()
-    except (Exception, BrokenPipeError) as error:
+    except Exception as error:
         print(str(error), file=sys.stderr)
         sys.exit(2)

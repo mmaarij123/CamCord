@@ -50,15 +50,17 @@ test('real X11 window updates under occlusion; pause, audio, source loss and rec
   for(let i=0;i+1<pcm.length;i+=2){const value=Math.abs(pcm.readInt16LE(i));peak=Math.max(peak,value);if(i<1600)early=Math.max(early,value);}
   assert.ok(peak>300,`System audio tone is missing (${peak})`);assert.ok(early<100,`Leading silence shifted (${early})`);
   for(const [height,width] of [[1440,2560],[2160,3840]]) {
-    const highResolution=new Recorder();active.push(highResolution);
-    await highResolution.start({...settings,height,fps:60,bitrateMbps:0,systemAudio:false,microphone:false},root,source,false);
-    await sleep(250);const highResolutionFile=await highResolution.stop();
-    const info=JSON.parse(await run('ffprobe',['-v','error','-show_streams','-of','json',highResolutionFile]));
-    assert.equal(info.streams[0].width,width);assert.equal(info.streams[0].height,height);
-    // Matroska's millisecond timestamps can slightly round a short clip's average.
-    const [numerator,denominator]=info.streams[0].avg_frame_rate.split('/').map(Number);
-    assert.ok(Math.abs(numerator/denominator-60)<0.5,`Unexpected high-resolution frame rate: ${info.streams[0].avg_frame_rate}`);
-    await run('ffmpeg',['-hide_banner','-loglevel','error','-xerror','-i',highResolutionFile,'-f','null','-']);
+    for(const fps of [15,30,60]) {
+      const highResolution=new Recorder();active.push(highResolution);
+      await highResolution.start({...settings,height,fps,bitrateMbps:0,systemAudio:false,microphone:false},root,source,false);
+      await sleep(250);const highResolutionFile=await highResolution.stop();
+      const info=JSON.parse(await run('ffprobe',['-v','error','-show_streams','-of','json',highResolutionFile]));
+      assert.equal(info.streams[0].width,width);assert.equal(info.streams[0].height,height);
+      // Matroska's millisecond timestamps can slightly round a short clip's average.
+      const [numerator,denominator]=info.streams[0].avg_frame_rate.split('/').map(Number);
+      assert.ok(Math.abs(numerator/denominator-fps)<0.5,`Unexpected ${height}p/${fps} frame rate: ${info.streams[0].avg_frame_rate}`);
+      await run('ffmpeg',['-hide_banner','-loglevel','error','-xerror','-i',highResolutionFile,'-f','null','-']);
+    }
   }
   const screen=new Recorder();active.push(screen);
   await screen.start({...settings,systemAudio:false,microphone:false},root,sources.find(item=>item.kind==='display'),false);

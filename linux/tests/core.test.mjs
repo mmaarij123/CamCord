@@ -10,16 +10,38 @@ import { encodingArgs, Recorder, concatLine, width } from '../src/recorder.mjs';
 import { run } from '../src/process.mjs';
 import { BITRATE_PRESETS, videoBitrateKbps } from '../shared/recording-quality.js';
 import { FrameCache } from '../src/frames.mjs';
+import { createPackageWithOptions, extractFile, listPackage } from '@electron/asar';
 
 async function fixture(t) {const folder=await mkdtemp(path.join(os.tmpdir(),'camcord-linux-test-'));t.after(()=>rm(folder,{recursive:true,force:true}));return folder;}
 function release(version='1.7.1') {return {draft:false,prerelease:false,tag_name:`v${version}`,assets:[{name:ASSET_NAME,state:'uploaded',size:3,
   browser_download_url:`https://github.com/mmaarij123/CamCord/releases/download/v${version}/${ASSET_NAME}`,digest:'sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'}]};}
+
+test('patched packaging tools preserve nested, hidden, Unicode and unpacked files',async t=>{
+  const root=await fixture(t),source=path.join(root,'input'),archive=path.join(root,'app.asar');
+  await mkdir(path.join(source,'nested'),{recursive:true});
+  for(const [name,body] of [['index.js','export default 42;'],['.settings','hidden'],['nested/ریکارڈنگ.txt','Unicode'],['nested/engine.bin','binary']]) {
+    await writeFile(path.join(source,name),body);
+  }
+  await createPackageWithOptions(source,archive,{unpack:'*.bin'});
+  assert.equal(listPackage(archive).length,5);
+  assert.equal(extractFile(archive,'nested/ریکارڈنگ.txt').toString(),'Unicode');
+  assert.equal(extractFile(archive,'.settings').toString(),'hidden');
+  assert.equal(await readFile(path.join(`${archive}.unpacked`,'nested','engine.bin'),'utf8'),'binary');
+});
 test('raw frame cache handles fragmented chunks and never overwrites an active encoder frame',()=>{
   const cache=new FrameCache(4);cache.accept(Buffer.from([1,2]));assert.equal(cache.latest,null);
   cache.accept(Buffer.from([3,4,5]));const pinned=cache.latest;cache.retain(pinned);
   cache.accept(Buffer.from([6,7,8,9,10,11,12]));assert.deepEqual([...pinned],[1,2,3,4]);assert.deepEqual([...cache.latest],[9,10,11,12]);
   const buffers=new Set();for(let i=0;i<1000;i++){cache.accept(Buffer.from([20,21,22,23]));buffers.add(cache.latest);}
   assert.ok(buffers.size<=2);cache.release(pinned);cache.reset();assert.equal(cache.latest,null);
+});
+
+test('failed encoder writes release the retained frame for recovery',async()=>{
+  const recorder=new Recorder(),frames=new FrameCache(4);
+  frames.accept(Buffer.from([1,2,3,4]));
+  Object.assign(recorder,{frames,capture:{exited:false},pumping:true,video:{write:async()=>{throw new Error('Synthetic write failure');}}});
+  await assert.rejects(recorder.pump(),/Synthetic write failure/);
+  assert.equal(frames.retained.size,0);assert.equal(recorder.framesWritten,undefined);
 });
 test('strict quality, shared bitrate recommendations and hardware flags',()=>{
   assert.equal(normalizeSettings(DEFAULT_SETTINGS,{height:720,fps:120}).fps,60);
@@ -80,25 +102,28 @@ test('streamed updates verify bytes, reject excess data and clean cancelled part
 });
 
 const ffmpeg=process.env.FFMPEG_PATH || (process.platform==='win32'?fileURLToPath(new URL('../../third_party/ffmpeg/ffmpeg.exe',import.meta.url)):'ffmpeg');
-test('2K/4K preferences and actual H.264 output retain their dimensions and 60 FPS',async t=>{
+test('2K/4K preferences and actual H.264 output retain dimensions and 15/30/60 FPS',async t=>{
   const root=await fixture(t);
-  for(const [height,expectedWidth,kbps] of [[1440,2560,32000],[2160,3840,64000]]) {
-    for(const fps of [15,30,60,120]) {
+  for(const [height,expectedWidth,bitrates] of [[1440,2560,[12000,20000,32000]],[2160,3840,[24000,40000,64000]]]) {
+    for(const fps of [15,30,60,120,0,-1,999]) {
       const settings=normalizeSettings(DEFAULT_SETTINGS,{height,fps});
-      assert.equal(settings.height,height);assert.equal(settings.fps,60);assert.equal(width(settings),expectedWidth);
+      assert.equal(settings.height,height);assert.equal(settings.fps,[15,30,60].includes(fps)?fps:60);assert.equal(width(settings),expectedWidth);
     }
-    const settings=normalizeSettings(DEFAULT_SETTINGS,{height,fps:60});
-    assert.equal(videoBitrateKbps(settings),kbps);
-    const preferences=path.join(root,`preferences-${height}.json`);
-    await atomicJson(preferences,{settings,outputFolder:root});
-    assert.equal((await loadPreferences(preferences,root)).settings.height,height);
-    const output=path.join(root,`${height}.mp4`);
-    await run(ffmpeg,['-y','-hide_banner','-loglevel','error','-f','lavfi','-i',`testsrc2=s=${expectedWidth}x${height}:r=60`,
-      '-frames:v','12','-an',...encodingArgs(settings,{name:'libx264'}),output],{timeout:60000});
-    const metadata=JSON.parse(await run(ffmpeg.replace(/ffmpeg(\.exe)?$/,'ffprobe$1'),['-v','error','-show_streams','-of','json',output]));
-    assert.equal(metadata.streams[0].width,expectedWidth);assert.equal(metadata.streams[0].height,height);
-    assert.equal(metadata.streams[0].avg_frame_rate,'60/1');
-    await run(ffmpeg,['-hide_banner','-loglevel','error','-xerror','-i',output,'-f','null','-']);
+    for(const [index,fps] of [15,30,60].entries()) {
+      const settings=normalizeSettings(DEFAULT_SETTINGS,{height,fps});
+      assert.equal(videoBitrateKbps(settings),bitrates[index]);
+      const preferences=path.join(root,`preferences-${height}-${fps}.json`);
+      await atomicJson(preferences,{settings,outputFolder:root});
+      const restored=(await loadPreferences(preferences,root)).settings;
+      assert.equal(restored.height,height);assert.equal(restored.fps,fps);
+      const output=path.join(root,`${height}-${fps}.mp4`);
+      await run(ffmpeg,['-y','-hide_banner','-loglevel','error','-f','lavfi','-i',`testsrc2=s=${expectedWidth}x${height}:r=${fps}`,
+        '-frames:v','12','-an',...encodingArgs(settings,{name:'libx264'}),output],{timeout:60000});
+      const metadata=JSON.parse(await run(ffmpeg.replace(/ffmpeg(\.exe)?$/,'ffprobe$1'),['-v','error','-show_streams','-of','json',output]));
+      assert.equal(metadata.streams[0].width,expectedWidth);assert.equal(metadata.streams[0].height,height);
+      assert.equal(metadata.streams[0].avg_frame_rate,`${fps}/1`);
+      await run(ffmpeg,['-hide_banner','-loglevel','error','-xerror','-i',output,'-f','null','-']);
+    }
   }
 });
 test('production recording keeps a 60 FPS timeline through uneven encoder input',async t=>{

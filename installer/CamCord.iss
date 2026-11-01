@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.9.1"
+  #define MyAppVersion "1.9.2"
 #endif
 
 [Setup]
@@ -57,6 +57,11 @@ Source: "..\third_party\webview2-runtime\MicrosoftEdgeWebview2Setup.exe"; Flags:
 Name: "{group}\CamCord"; Filename: "{app}\CamCord.exe"
 Name: "{autodesktop}\CamCord"; Filename: "{app}\CamCord.exe"; Tasks: desktopicon
 #endif
+
+[InstallDelete]
+; Replace generated assets so upgrades do not accumulate retired bundles/notices.
+Type: filesandordirs; Name: "{app}\ui"
+Type: filesandordirs; Name: "{app}\licenses"
 
 [Run]
 #ifndef InstallerSmokeTest
@@ -140,7 +145,7 @@ begin
     ExistingEngine := AddBackslash(WizardDirValue) + 'ffmpeg.exe';
     if FileExists(ExistingEngine) then begin
       if CompareText(GetSHA256OfFile(ExistingEngine), FFmpegBinaryHash) = 0 then begin
-        if ForceDirectories(ExtractFileDir(EnginePath)) and FileCopy(ExistingEngine, EnginePath, False) then begin
+        if ForceDirectories(ExtractFileDir(EnginePath)) and CopyFile(ExistingEngine, EnginePath, False) then begin
           if CompareText(GetSHA256OfFile(EnginePath), FFmpegBinaryHash) = 0 then begin
             Log('Reused existing FFmpeg executable after SHA-256 verification.');
             Exit;

@@ -1,20 +1,22 @@
-# 2K and 4K recording — 1.9.1
+# 2K and 4K recording — 1.9.2
 
 Added 2560 × 1440 (2K / QHD) and 3840 × 2160 (4K / UHD) profiles to the shared
 React interface, Windows host/settings and Debian recorder/capture helper. Both
-profiles use 60 FPS. Switching from another FPS or restoring older preferences
-normalizes them consistently. Existing 480p/720p and 1080p profiles remain;
+profiles support 15, 30 and 60 FPS. Switching resolution or restoring preferences
+preserves supported frame rates; 120 FPS falls back to 60 outside 1080p.
+Existing 480p/720p and 1080p profiles remain;
 1080p retains its supported-hardware 120 FPS option.
 
-Auto video targets are 32 Mbps for 1440p and 64 Mbps for 2160p, with the existing
-100 Mbps manual ceiling and high-storage warnings. Width, frame-rate choices and
+Auto video targets at 15/30/60 FPS are 12/20/32 Mbps for 1440p and 24/40/64 Mbps
+for 2160p, with the existing 100 Mbps manual ceiling and high-storage warnings.
+Width, frame-rate choices and
 bitrate estimates are shared between the UI and Debian; native helpers apply
 equivalent normalization. Windows encoder probes now use the selected dimensions
 before choosing a hardware or software encoder.
 
 The five resolution buttons use a three-column grid, including at narrow window
-sizes. The high-resolution frame-rate row shows 60 FPS and explains its extra
-GPU/storage cost.
+sizes. The high-resolution frame-rate row shows all three options and explains
+the GPU/storage cost.
 
 ## Windows capture changes
 
@@ -33,7 +35,7 @@ existing software encoder output remains standard 8-bit H.264 4:2:0.
 
 ## Checks
 
-- Shared UI tests cover both resolutions, dimensions, 60 FPS normalization,
+- Shared UI tests cover both resolutions, dimensions, 15/30/60 FPS preservation,
   restored state, Auto bitrates, storage and manual-bitrate preservation.
 - Native settings tests cover host messages and isolated INI save/load for both
   new profiles, including inputs that request unsupported frame rates.
@@ -42,8 +44,9 @@ existing software encoder output remains standard 8-bit H.264 4:2:0.
   the old preferences on failure. A controlled short-lived reader exercises
   this path, including Windows returning access denied for a rename lock.
 - Debian core tests encode/decode generated 1440p and 2160p H.264 and inspect
-  dimensions and average frame rate with FFprobe. The isolated X11 integration
-  suite also records both profiles through the actual capture helper.
+  dimensions and average frame rate with FFprobe at all three frame rates.
+  The isolated X11 integration suite also records all six combinations through
+  the actual capture helper.
   Debian recording explicitly uses constant frame-rate output; an uneven-input
   regression test verifies that the final MP4 retains its 60 FPS timeline.
 - The optional native `capture-performance-test.ps1 -Hardware -Uhd -LiveWindow`

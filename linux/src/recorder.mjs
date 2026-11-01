@@ -124,7 +124,10 @@ export class Recorder {
     const interval=1000/this.settings.fps;let next=performance.now();
     while(this.pumping && !this.capture.exited) {
       const frame=this.latest;
-      if(frame) {const cache=this.frames;cache.retain(frame);await this.video.write(frame);cache.release(frame);this.framesWritten++;}
+      if(frame) {
+        const cache=this.frames;cache.retain(frame);
+        try {await this.video.write(frame);this.framesWritten++;} finally {cache.release(frame);}
+      }
       next+=interval;
       if(performance.now()-next>5000) throw new Error('The encoder cannot keep up. Lower the frame rate or bitrate before recording again.');
       await new Promise(resolve=>setTimeout(resolve,Math.max(0,next-performance.now())));

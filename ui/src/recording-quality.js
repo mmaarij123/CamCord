@@ -11,10 +11,9 @@ export const RESOLUTIONS = [
 ];
 const STANDARD_FRAME_RATES = [15, 30, 60];
 const HIGH_FRAME_RATES = [15, 30, 60, 120];
-const UHD_FRAME_RATES = [60];
 export function normalizeHeight(height) { return RESOLUTIONS.some(resolution => resolution.height === height) ? height : 1080; }
 export function recordingWidth(height) { return RESOLUTIONS.find(resolution => resolution.height === height)?.width ?? 1920; }
-export function frameRatesForHeight(height) { return height >= 1440 ? UHD_FRAME_RATES : height === 1080 ? HIGH_FRAME_RATES : STANDARD_FRAME_RATES; }
+export function frameRatesForHeight(height) { return height === 1080 ? HIGH_FRAME_RATES : STANDARD_FRAME_RATES; }
 export function normalizeFps(height, fps) { return frameRatesForHeight(height).includes(fps) ? fps : 60; }
 
 export function normalizeBitrate(value) {
@@ -24,8 +23,8 @@ export function normalizeBitrate(value) {
 export function videoBitrateKbps(settings) {
   const manual = normalizeBitrate(settings.bitrateMbps);
   if (manual) return manual * 1000;
-  if (settings.height === 2160) return 64000;
-  if (settings.height === 1440) return 32000;
+  if (settings.height === 2160) return settings.fps >= 60 ? 64000 : settings.fps <= 15 ? 24000 : 40000;
+  if (settings.height === 1440) return settings.fps >= 60 ? 32000 : settings.fps <= 15 ? 12000 : 20000;
   if (settings.height === 480) return settings.fps >= 60 ? 5000 : settings.fps <= 15 ? 2500 : 3500;
   if (settings.height === 720) return settings.fps >= 60 ? 8000 : settings.fps <= 15 ? 4000 : 5500;
   if (settings.fps >= 120) return 24000;

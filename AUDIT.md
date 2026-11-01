@@ -1,4 +1,8 @@
-# CamCord code audit — 2026-10-08
+# CamCord code audits
+
+Latest: [full audit for 1.9.2 — 2026-11-02](docs/full-audit-v1.9.2.md).
+
+## Historical audit — 2026-10-08
 
 Reviewed the Win32/WebView2 host, React interface and bridge, WASAPI audio writer, capture process, encoder selection, pause/resume and finalization, output folders, settings persistence, dependency staging, installer and GitHub release workflow.
 

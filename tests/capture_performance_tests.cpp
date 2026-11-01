@@ -1,5 +1,5 @@
-// Exercises the production frame bridge with generated moving frames only.
-// Never selects or records a desktop, window, sound device or microphone.
+// Exercises the production frame bridge with generated frames, or an owned
+// moving window when explicitly requested. Never records user content/audio.
 #include "../src/CaptureEngine.h"
 #include "../src/CaptureSources.h"
 #include "../src/RecordingQuality.h"
@@ -76,7 +76,7 @@ int wmain(int argc, wchar_t** argv) {
         Check(!fs::exists(root), "Supply a fresh performance-test folder"); fs::create_directories(root);
         MovingWindow fixture;
         if (live) fixture.Create();
-        const std::vector<std::pair<int,int>> profiles = uhd ? std::vector<std::pair<int,int>>{{1440,60},{2160,60}}
+        const std::vector<std::pair<int,int>> profiles = uhd ? std::vector<std::pair<int,int>>{{1440,15},{1440,30},{1440,60},{2160,15},{2160,30},{2160,60}}
             : hardware ? std::vector<std::pair<int,int>>{{1080,60},{1080,120}} : std::vector<std::pair<int,int>>{{720,60}};
         for (const auto& [height, fps] : profiles) {
             RecordingSettings settings; settings.height = height; settings.width = RecordingWidth(height);

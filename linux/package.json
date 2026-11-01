@@ -1,7 +1,7 @@
 {
   "name": "camcord-debian",
   "productName": "CamCord",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "private": true,
   "type": "module",
   "main": "src/main.mjs",
@@ -14,6 +14,7 @@
     "package": "node scripts/package.mjs"
   },
   "devDependencies": { "@electron/packager": "20.3.0" },
+  "overrides": { "@electron/asar": { "glob": "14.0.3", "minimatch": "11.0.3" } },
   "engines": { "node": ">=22.12.0" },
   "electronVersion": "44.7.0"
 }

@@ -239,7 +239,7 @@ export default function App() {
               {frameRates.map((fps) => <ToggleButton key={fps} value={fps} aria-label={`${fps} frames per second`}>{fps}</ToggleButton>)}
             </ToggleButtonGroup>
             <span className="field-hint">{app.settings.height >= 1440
-              ? '2K and 4K record at 60 FPS and need more GPU power and storage.'
+              ? '2K and 4K support 15, 30 and 60 FPS. Higher frame rates need more GPU power and storage.'
               : '120 FPS is available at 1080p with supported hardware.'}</span>
           </div>
           <Suspense fallback={<div className="settings-group bitrate-loading" role="status"><span className="field-label">Video bitrate</span><span className="field-hint">Loading bitrate options…</span></div>}>

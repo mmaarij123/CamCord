@@ -8,7 +8,7 @@ export function normalizeSettings(current, changes = {}) {
   const next = { ...current };
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return next;
   if (Number.isInteger(changes.height)) next.height = normalizeHeight(changes.height);
-  if (Number.isInteger(changes.fps)) next.fps = [15,30,60,120].includes(changes.fps) ? changes.fps : 60;
+  if (Number.isInteger(changes.fps)) next.fps = changes.fps;
   next.fps = normalizeFps(next.height, next.fps);
   if (Number.isInteger(changes.bitrateMbps)) next.bitrateMbps = normalizeBitrate(changes.bitrateMbps);
   for (const key of ['systemAudio','microphone','autoCheckUpdates']) if (typeof changes[key] === 'boolean') next[key] = changes[key];

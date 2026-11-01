@@ -118,24 +118,25 @@ int wmain(int argc, wchar_t** argv) {
         std::cout << "PASS: isolated defaults and Unicode settings round-trip (Urdu, CJK, emoji)\n";
 
         for (const int height : {1440, 2160}) {
-            for (const int fps : {15, 30, 60, 120}) {
+            for (const int fps : {15, 30, 60, 120, 0, -1, 999}) {
+                const int expectedFps = fps == 15 || fps == 30 ? fps : 60;
                 const auto json = L"{\"type\":\"settings\",\"settings\":{\"height\":" + std::to_wstring(height)
                     + L",\"fps\":" + std::to_wstring(fps) + L",\"bitrateMbps\":100}}";
                 HostMessage highResolution;
                 Check(highResolution.Parse(json), "High-resolution message did not parse");
                 const auto selected = highResolution.Settings(expected);
                 Check(selected.height == height && selected.width == (height == 1440 ? 2560 : 3840)
-                    && selected.fps == 60 && selected.bitrateMbps == 100, "High-resolution host settings changed the output profile");
+                    && selected.fps == expectedFps && selected.bitrateMbps == 100, "High-resolution host settings changed the output profile");
                 const auto highResolutionSave = settings.Save(selected);
                 if (!highResolutionSave.ok) std::wcerr << highResolutionSave.message << L'\n';
                 Check(highResolutionSave.ok, "High-resolution settings did not save");
                 const auto restored = settings.Load();
-                Check(restored.height == height && restored.width == selected.width && restored.fps == 60,
+                Check(restored.height == height && restored.width == selected.width && restored.fps == expectedFps,
                     "High-resolution settings did not survive restart");
             }
         }
         Check(settings.Save(expected).ok, "Could not restore isolated settings fixture");
-        std::cout << "PASS: 2K/4K dimensions, host messages and preferences retain 60 FPS and manual bitrate\n";
+        std::cout << "PASS: 2K/4K dimensions, host messages and preferences retain 15/30/60 FPS and manual bitrate\n";
 
         HANDLE settingsReader = CreateFileW(settingsPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);

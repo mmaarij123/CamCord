@@ -66,6 +66,7 @@ async function updateAction(type,manual=true) {
   updateBusy=true;updateManual=manual;
   try {
     if(type==='checkUpdates') {
+      updateInfo=undefined;updateFile=undefined;
       update={status:'checking',message:'Checking for updates…',version:'',progress:0};send();nextCheck=Date.now()+6*60*60*1000;
       updateInfo=await updater.check(version);
       update={status:updateInfo?'available':'idle',message:updateInfo?'A Debian update is available.':"You’re up to date.",version:updateInfo?.version||'',progress:0};

@@ -8,7 +8,6 @@
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <filesystem>
-#include <cwctype>
 #include <sstream>
 #include <vector>
 
@@ -401,7 +400,7 @@ void MainWindow::PollUpdate() {
     if (updateStatus_ == L"available" && downloadWhenAvailable_ && pending_ == Action::None &&
         snapshotState_ == RecorderState::Idle && !folderDialogOpen_) {
         BeginUpdate(UpdateAction::Download, manualUpdate_);
-    } else if (updateStatus_ != L"installing" && settings_.autoCheckUpdates &&
+    } else if (updateStatus_ != L"installing" && updateStatus_ != L"ready" && settings_.autoCheckUpdates &&
         std::chrono::steady_clock::now() >= nextUpdateCheck_) BeginUpdate(UpdateAction::Check);
 }
 
@@ -484,7 +483,7 @@ void MainWindow::HandleWebMessage(const std::wstring& message) {
         else if (kind == L"window") { settings_.captureTarget = {}; settings_.captureTarget.kind = CaptureKind::Window; settings_.captureTarget.label = L"Choose a window"; }
         selectionInvalid_ = false;
         sourceSelectedAt_ = GetTickCount();
-        RefreshSources(); SendState(true);
+        SendState(true);
     } else if (snapshotState_ == RecorderState::Idle && type == L"selectSource") {
         const auto id = request.String("id");
         const bool windowMode = settings_.captureTarget.kind == CaptureKind::Window;

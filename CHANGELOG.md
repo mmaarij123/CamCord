@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.9.2 — 2026-11-02
+
+- Added 15 and 30 FPS to both 2K and 4K on Windows and Debian, alongside 60 FPS; selections persist across restarts.
+- Auto bitrates now follow FPS: 2K uses 12/20/32 Mbps and 4K uses 24/40/64 Mbps at 15/30/60 FPS. Manual targets remain unchanged.
+- Kept ready Windows updates available until installation and cleared stale Debian update metadata before a new check.
+- Released retained Debian capture frames on failed encoder writes and removed unused imports, styles and duplicate validation/source enumeration.
+- Setup replaces generated UI bundles and dependency notices during upgrades, preventing obsolete files from accumulating.
+- Patched vulnerable transitive glob/minimatch build dependencies and tested archive creation/extraction with their replacements.
+- Extended settings, encode/decode, capture cadence and isolated desktop tests to all six high-resolution profiles.
+
 ## 1.9.1 — 2026-11-01
 
 - Added 2K (2560 × 1440) and 4K (3840 × 2160) recording at 60 FPS on Windows and Debian.
