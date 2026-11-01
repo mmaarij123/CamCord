@@ -1,4 +1,4 @@
-# 2K and 4K recording — 1.9.0
+# 2K and 4K recording — 1.9.1
 
 Added 2560 × 1440 (2K / QHD) and 3840 × 2160 (4K / UHD) profiles to the shared
 React interface, Windows host/settings and Debian recorder/capture helper. Both
@@ -44,6 +44,8 @@ existing software encoder output remains standard 8-bit H.264 4:2:0.
 - Debian core tests encode/decode generated 1440p and 2160p H.264 and inspect
   dimensions and average frame rate with FFprobe. The isolated X11 integration
   suite also records both profiles through the actual capture helper.
+  Debian recording explicitly uses constant frame-rate output; an uneven-input
+  regression test verifies that the final MP4 retains its 60 FPS timeline.
 - The optional native `capture-performance-test.ps1 -Hardware -Uhd -LiveWindow`
   checks actual selected-window capture, H.264 file dimensions/FPS, decode and
   cadence. On the local RTX 2060 SUPER / i5-10400 system, the owned moving-window

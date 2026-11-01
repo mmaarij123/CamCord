@@ -101,6 +101,23 @@ test('2K/4K preferences and actual H.264 output retain their dimensions and 60 F
     await run(ffmpeg,['-hide_banner','-loglevel','error','-xerror','-i',output,'-f','null','-']);
   }
 });
+test('production recording keeps a 60 FPS timeline through uneven encoder input',async t=>{
+  const root=await fixture(t),session=path.join(root,'session');await mkdir(session);
+  const recorder=new Recorder({ffmpeg});
+  Object.assign(recorder,{session,output:path.join(root,'timed.mp4'),settings:{...DEFAULT_SETTINGS,width:160,height:90,fps:60,systemAudio:false,microphone:false},
+    encoder:{name:'libx264',hardware:false},capture:{exited:false},frames:new FrameCache(160*90*4)});
+  recorder.frames.accept(Buffer.alloc(160*90*4,128));
+  try {
+    await recorder.startSegment();
+    const write=recorder.video.write.bind(recorder.video);let frame=0;
+    recorder.video.write=async bytes=>{await new Promise(resolve=>setTimeout(resolve,++frame%2?40:1));await write(bytes);};
+    await new Promise(resolve=>setTimeout(resolve,800));
+    await recorder.stopSegment();recorder.state='paused';await recorder.finalize();
+    const metadata=JSON.parse(await run(ffmpeg.replace(/ffmpeg(\.exe)?$/,'ffprobe$1'),['-v','error','-show_streams','-of','json',recorder.output]));
+    const [numerator,denominator]=metadata.streams[0].avg_frame_rate.split('/').map(Number);
+    assert.ok(Math.abs(numerator/denominator-60)<0.5,`Recording timeline drifted: ${metadata.streams[0].avg_frame_rate}`);
+  } finally {await recorder.abortEncoder();}
+});
 test('paused segment publication, apostrophe paths, collisions and corrupt recovery',async t=>{
   const root=await fixture(t),folder=path.join(root,"O'Brien"),output=path.join(root,'finished.mp4');await mkdir(folder);
   const first=path.join(folder,'one.mp4'),second=path.join(folder,'two.mp4');

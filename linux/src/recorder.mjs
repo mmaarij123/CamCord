@@ -109,7 +109,7 @@ export class Recorder {
     }
     const args=['-y','-hide_banner','-loglevel','warning','-probesize','32','-analyzeduration','0','-use_wallclock_as_timestamps','1',
       '-f','rawvideo','-pixel_format','bgra','-video_size',`${this.settings.width}x${this.settings.height}`,'-framerate',String(this.settings.fps),'-i','pipe:0'];
-    args.push('-map','0:v:0','-an',...encodingArgs(this.settings,this.encoder),'-r',String(this.settings.fps),'-cluster_time_limit','1000','-flush_packets','1',file);
+    args.push('-map','0:v:0','-an',...encodingArgs(this.settings,this.encoder),'-r',String(this.settings.fps),'-fps_mode','cfr','-cluster_time_limit','1000','-flush_packets','1',file);
     this.video=new ManagedProcess(this.ffmpeg,args,`${file}.log`);
     this.pumping=true;this.framesWritten=0;this.segmentAt=performance.now();this.state='recording';this.segments.push({video:file,audios:audioFiles});
     this.pumpTask=this.pump().catch(error=>{this.failed=error;this.pumping=false;this.onFailure(error.message);});
