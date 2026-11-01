@@ -133,6 +133,7 @@ button:focus-visible, .MuiButtonBase-root:focus-visible { outline: 2px solid #f2
 .storage-warning svg { flex-shrink: 0; font-size: 18px; }
 .storage-note { margin-top: 7px; }
 .resolution-picker, .fps-picker { gap: 7px; }
+.resolution-picker { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .resolution-picker .MuiToggleButtonGroup-grouped, .fps-picker .MuiToggleButtonGroup-grouped { border: 1px solid var(--line) !important; border-radius: 9px !important; margin: 0 !important; color: #97a2b4; background: #ffffff05; transition: background 180ms, border-color 180ms, color 180ms; }
 .resolution-picker .MuiToggleButtonGroup-grouped:hover, .fps-picker .MuiToggleButtonGroup-grouped:hover { color: #ccd3dd; background: #ffffff0b; }
 .resolution-picker .Mui-selected, .fps-picker .Mui-selected { color: var(--ink) !important; background: #f2675f1b !important; border-color: #f2675f5c !important; }

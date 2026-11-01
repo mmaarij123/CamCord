@@ -35,11 +35,10 @@ public:
         if (found == value_.end() || !found->is_object()) return settings;
         const auto& data = *found;
         settings.height = Integer(data, "height", settings.height);
-        if (settings.height != 480 && settings.height != 720 && settings.height != 1080) settings.height = 1080;
-        settings.width = settings.height == 480 ? 854 : settings.height == 720 ? 1280 : 1920;
+        settings.height = NormalizeRecordingHeight(settings.height);
+        settings.width = RecordingWidth(settings.height);
         settings.fps = Integer(data, "fps", settings.fps);
-        if (settings.fps != 15 && settings.fps != 30 && settings.fps != 60 && settings.fps != 120) settings.fps = 60;
-        if (settings.height != 1080 && settings.fps == 120) settings.fps = 60;
+        settings.fps = NormalizeRecordingFps(settings.height, settings.fps);
         settings.bitrateMbps = NormalizeBitrateMbps(Integer(data, "bitrateMbps", settings.bitrateMbps));
         settings.systemAudio = Boolean(data, "systemAudio", settings.systemAudio);
         settings.microphone = Boolean(data, "microphone", settings.microphone);

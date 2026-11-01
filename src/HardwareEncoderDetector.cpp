@@ -12,12 +12,12 @@ bool HardwareEncoderDetector::Probe(const std::wstring& ffmpeg, const std::wstri
     return ChildProcess::Run(ffmpeg, args, log, 20000) == 0;
 }
 
-EncoderChoice HardwareEncoderDetector::Detect(const std::wstring& ffmpeg, const std::wstring& folder) {
+EncoderChoice HardwareEncoderDetector::Detect(const std::wstring& ffmpeg, const std::wstring& folder, int width, int height, int fps) {
     const std::vector<EncoderChoice> choices = {
         {L"h264_nvenc", L"NVIDIA NVENC", true}, {L"h264_amf", L"AMD AMF", true}, {L"h264_qsv", L"Intel Quick Sync", true}
     };
-    for (const auto& c : choices) if (Probe(ffmpeg, folder, c.name, 640, 360, 30)) return c;
-    if (Probe(ffmpeg, folder, L"libx264", 640, 360, 30)) return { L"libx264", L"Software H.264", false };
+    for (const auto& c : choices) if (Probe(ffmpeg, folder, c.name, width, height, fps)) return c;
+    if (Probe(ffmpeg, folder, L"libx264", width, height, fps)) return { L"libx264", L"Software H.264", false };
     return {};
 }
 

@@ -1,8 +1,13 @@
-param([string]$Ffmpeg, [switch]$Hardware, [switch]$LiveWindow)
+param([string]$Ffmpeg, [string]$Ffprobe, [switch]$Hardware, [switch]$LiveWindow, [switch]$Uhd)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $Ffmpeg) { $Ffmpeg = Join-Path $projectRoot 'third_party\ffmpeg\ffmpeg.exe' }
 $Ffmpeg = (Resolve-Path -LiteralPath $Ffmpeg).Path
+if (-not $Ffprobe) {
+    $Ffprobe = Join-Path (Split-Path -Parent $Ffmpeg) 'ffprobe.exe'
+    if (-not (Test-Path -LiteralPath $Ffprobe)) { $Ffprobe = Join-Path $projectRoot 'third_party\ffmpeg\ffprobe.exe' }
+}
+$Ffprobe = (Resolve-Path -LiteralPath $Ffprobe).Path
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsRoot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if (-not $vsRoot) { throw 'Visual Studio C++ tools are required.' }
@@ -17,11 +22,15 @@ try {
     & $env:ComSpec /d /s /c $command
     if ($LASTEXITCODE -ne 0) { throw 'Capture performance tests did not compile.' }
     $artifacts = Join-Path $build ('run-' + [guid]::NewGuid().ToString('N'))
-    $arguments = @($Ffmpeg, $artifacts)
+    $arguments = @($Ffmpeg, $artifacts, $Ffprobe)
     if ($Hardware) { $arguments += '--hardware' }
     if ($LiveWindow) {
         if (-not $Hardware) { throw 'LiveWindow requires -Hardware.' }
         $arguments += '--live-window'
+    }
+    if ($Uhd) {
+        if (-not $Hardware) { throw 'Uhd requires -Hardware.' }
+        $arguments += '--uhd'
     }
     & (Join-Path $build 'capture_performance_tests.exe') @arguments
     if ($LASTEXITCODE -ne 0) { throw "Capture performance tests failed. Artifacts: $artifacts" }

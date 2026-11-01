@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BITRATE_PRESETS, normalizeBitrate, videoBitrateKbps, videoPeakMbps, suggestedBitrate, storageEstimate } from '../src/recording-quality.js';
+import { BITRATE_PRESETS, normalizeBitrate, videoBitrateKbps, videoPeakMbps, suggestedBitrate, storageEstimate, recordingWidth, frameRatesForHeight } from '../src/recording-quality.js';
 import { INITIAL_STATE, updateSettings, mergeState } from '../src/recorder-state.js';
 
 test('all bitrate presets are valid and malformed/out-of-range values become Auto', () => {
@@ -13,10 +13,25 @@ test('all bitrate presets are valid and malformed/out-of-range values become Aut
 
 test('Auto retains existing resolution/FPS targets and suggests a nearby manual preset', () => {
   for (const [height, fps, kbps] of [[480,15,2500],[480,30,3500],[480,60,5000],
-    [720,15,4000],[720,30,5500],[720,60,8000],[1080,15,6000],[1080,30,9000],[1080,60,14000],[1080,120,24000]]) {
+    [720,15,4000],[720,30,5500],[720,60,8000],[1080,15,6000],[1080,30,9000],[1080,60,14000],[1080,120,24000],[1440,60,32000],[2160,60,64000]]) {
     const settings = { height, fps, bitrateMbps: 0 };
     assert.equal(videoBitrateKbps(settings), kbps);
     assert.ok(suggestedBitrate(settings) >= kbps / 1000);
+  }
+});
+
+test('2K/4K selection, restored state and changed FPS keep the exact 60 FPS output profile', () => {
+  for (const [height, width] of [[1440,2560],[2160,3840]]) {
+    assert.equal(recordingWidth(height), width);
+    assert.deepEqual(frameRatesForHeight(height), [60]);
+    for (const fps of [15,30,60,120,999]) {
+      const settings = updateSettings({...INITIAL_STATE.settings, fps:120, bitrateMbps:100}, {height,fps});
+      assert.equal(settings.height, height); assert.equal(settings.fps, 60); assert.equal(settings.bitrateMbps,100);
+      const restored = mergeState(INITIAL_STATE, {state:'idle',settings:{height,fps}});
+      assert.equal(restored.settings.height,height); assert.equal(restored.settings.fps,60);
+    }
+    const storage = storageEstimate({...INITIAL_STATE.settings,height,bitrateMbps:0});
+    assert.ok(storage.mbPerMinute > 240);
   }
 });
 

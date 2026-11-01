@@ -14,6 +14,6 @@ inline std::wstring VideoEncodingArguments(const RecordingSettings& settings, co
     arguments += L" -b:v " + std::to_wstring(VideoBitrateKbps(settings)) + L"k -maxrate "
         + std::to_wstring(VideoPeakBitrateKbps(settings)) + L"k -bufsize "
         + std::to_wstring(VideoBitrateKbps(settings) * 2) + L"k -g " + std::to_wstring(settings.fps * 2)
-        + L" -pix_fmt yuv420p -r " + std::to_wstring(settings.fps);
+        + (encoder.hardware ? L" -pix_fmt nv12 -r " : L" -pix_fmt yuv420p -r ") + std::to_wstring(settings.fps);
     return arguments;
 }

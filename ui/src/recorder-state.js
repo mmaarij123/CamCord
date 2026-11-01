@@ -1,5 +1,5 @@
 import packageInfo from '../package.json' with { type: 'json' };
-import { normalizeBitrate } from './recording-quality.js';
+import { normalizeBitrate, normalizeHeight, normalizeFps } from './recording-quality.js';
 
 export const INITIAL_STATE = {
   state: 'idle',
@@ -41,7 +41,8 @@ export function formatElapsed(value) {
 export function updateSettings(current, changes) {
   const settings = { ...current, ...changes };
   settings.bitrateMbps = normalizeBitrate(settings.bitrateMbps);
-  if (settings.height !== 1080 && settings.fps === 120) settings.fps = 60;
+  settings.height = normalizeHeight(settings.height);
+  settings.fps = normalizeFps(settings.height, settings.fps);
   return settings;
 }
 

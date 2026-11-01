@@ -12,6 +12,7 @@
 #include <limits>
 #include <stdexcept>
 #include <vector>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -116,6 +117,37 @@ int wmain(int argc, wchar_t** argv) {
             "Unicode settings did not retain the UTF-16 BOM");
         std::cout << "PASS: isolated defaults and Unicode settings round-trip (Urdu, CJK, emoji)\n";
 
+        for (const int height : {1440, 2160}) {
+            for (const int fps : {15, 30, 60, 120}) {
+                const auto json = L"{\"type\":\"settings\",\"settings\":{\"height\":" + std::to_wstring(height)
+                    + L",\"fps\":" + std::to_wstring(fps) + L",\"bitrateMbps\":100}}";
+                HostMessage highResolution;
+                Check(highResolution.Parse(json), "High-resolution message did not parse");
+                const auto selected = highResolution.Settings(expected);
+                Check(selected.height == height && selected.width == (height == 1440 ? 2560 : 3840)
+                    && selected.fps == 60 && selected.bitrateMbps == 100, "High-resolution host settings changed the output profile");
+                const auto highResolutionSave = settings.Save(selected);
+                if (!highResolutionSave.ok) std::wcerr << highResolutionSave.message << L'\n';
+                Check(highResolutionSave.ok, "High-resolution settings did not save");
+                const auto restored = settings.Load();
+                Check(restored.height == height && restored.width == selected.width && restored.fps == 60,
+                    "High-resolution settings did not survive restart");
+            }
+        }
+        Check(settings.Save(expected).ok, "Could not restore isolated settings fixture");
+        std::cout << "PASS: 2K/4K dimensions, host messages and preferences retain 60 FPS and manual bitrate\n";
+
+        HANDLE settingsReader = CreateFileW(settingsPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        Check(settingsReader != INVALID_HANDLE_VALUE, "Cannot create isolated settings read lock");
+        std::thread releaseReader([settingsReader] { Sleep(50); CloseHandle(settingsReader); });
+        auto whileLocked = expected; whileLocked.bitrateMbps = 32;
+        const auto lockedSave = settings.Save(whileLocked);
+        releaseReader.join();
+        if (!lockedSave.ok) std::wcerr << lockedSave.message << L'\n';
+        Check(lockedSave.ok && settings.Load().bitrateMbps == 32, "Short-lived settings reader prevented atomic save");
+        Check(settings.Save(expected).ok, "Could not restore settings after reader fixture");
+
         for (const int bitrate : BITRATE_PRESETS_MBPS) {
             auto selected = expected; selected.bitrateMbps = bitrate;
             Check(settings.Save(selected).ok && settings.Load().bitrateMbps == bitrate,
@@ -123,7 +155,9 @@ int wmain(int argc, wchar_t** argv) {
         }
         for (const int bitrate : { -1, 3, 101, 1000000 }) {
             auto selected = expected; selected.bitrateMbps = bitrate;
-            Check(settings.Save(selected).ok && settings.Load().bitrateMbps == 0,
+            const auto invalidSave = settings.Save(selected);
+            if (!invalidSave.ok) std::wcerr << invalidSave.message << L'\n';
+            Check(invalidSave.ok && settings.Load().bitrateMbps == 0,
                 "An invalid bitrate did not reset to Auto");
         }
         Check(settings.Save(expected).ok, "Could not restore baseline bitrate settings");
@@ -157,8 +191,9 @@ int wmain(int argc, wchar_t** argv) {
         SettingsManager invalidDestination(directoryTarget.wstring());
         Check(!invalidDestination.Save(expected).ok && fs::is_directory(directoryTarget),
             "Failed atomic replacement did not preserve the existing destination directory");
-        const auto replacementTemp = directoryTarget.wstring() + L"." + std::to_wstring(GetCurrentProcessId()) + L".tmp";
-        Check(!fs::exists(replacementTemp), "Failed settings replacement left its temporary file behind");
+        for (const auto& entry : fs::directory_iterator(root))
+            Check(entry.path().filename().wstring().find(L"directory-is-not-an-ini.") != 0 || entry.path().extension() != L".tmp",
+                "Failed settings replacement left its temporary file behind");
         std::cout << "PASS: failed settings destinations return failure and discard only temporary output\n";
 
         OutputManager output;

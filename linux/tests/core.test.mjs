@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_SETTINGS, normalizeSettings, atomicJson, loadPreferences, writableFolder, startupEnabled, setStartup, startupCommand } from '../src/preferences.mjs';
 import { newerVersion, parseRelease, verifyUpdate, sha256, Updater, ASSET_NAME } from '../src/updater.mjs';
-import { encodingArgs, Recorder, concatLine } from '../src/recorder.mjs';
+import { encodingArgs, Recorder, concatLine, width } from '../src/recorder.mjs';
 import { run } from '../src/process.mjs';
 import { BITRATE_PRESETS, videoBitrateKbps } from '../shared/recording-quality.js';
 import { FrameCache } from '../src/frames.mjs';
@@ -80,6 +80,27 @@ test('streamed updates verify bytes, reject excess data and clean cancelled part
 });
 
 const ffmpeg=process.env.FFMPEG_PATH || (process.platform==='win32'?fileURLToPath(new URL('../../third_party/ffmpeg/ffmpeg.exe',import.meta.url)):'ffmpeg');
+test('2K/4K preferences and actual H.264 output retain their dimensions and 60 FPS',async t=>{
+  const root=await fixture(t);
+  for(const [height,expectedWidth,kbps] of [[1440,2560,32000],[2160,3840,64000]]) {
+    for(const fps of [15,30,60,120]) {
+      const settings=normalizeSettings(DEFAULT_SETTINGS,{height,fps});
+      assert.equal(settings.height,height);assert.equal(settings.fps,60);assert.equal(width(settings),expectedWidth);
+    }
+    const settings=normalizeSettings(DEFAULT_SETTINGS,{height,fps:60});
+    assert.equal(videoBitrateKbps(settings),kbps);
+    const preferences=path.join(root,`preferences-${height}.json`);
+    await atomicJson(preferences,{settings,outputFolder:root});
+    assert.equal((await loadPreferences(preferences,root)).settings.height,height);
+    const output=path.join(root,`${height}.mp4`);
+    await run(ffmpeg,['-y','-hide_banner','-loglevel','error','-f','lavfi','-i',`testsrc2=s=${expectedWidth}x${height}:r=60`,
+      '-frames:v','12','-an',...encodingArgs(settings,{name:'libx264'}),output],{timeout:60000});
+    const metadata=JSON.parse(await run(ffmpeg.replace(/ffmpeg(\.exe)?$/,'ffprobe$1'),['-v','error','-show_streams','-of','json',output]));
+    assert.equal(metadata.streams[0].width,expectedWidth);assert.equal(metadata.streams[0].height,height);
+    assert.equal(metadata.streams[0].avg_frame_rate,'60/1');
+    await run(ffmpeg,['-hide_banner','-loglevel','error','-xerror','-i',output,'-f','null','-']);
+  }
+});
 test('paused segment publication, apostrophe paths, collisions and corrupt recovery',async t=>{
   const root=await fixture(t),folder=path.join(root,"O'Brien"),output=path.join(root,'finished.mp4');await mkdir(folder);
   const first=path.join(folder,'one.mp4'),second=path.join(folder,'two.mp4');

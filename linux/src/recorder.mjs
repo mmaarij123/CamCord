@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile, stat, rm, link } from 'node:fs/pro
 import { performance } from 'node:perf_hooks';
 import { ManagedProcess, run } from './process.mjs';
 import { writableFolder, normalizeSettings, DEFAULT_SETTINGS } from './preferences.mjs';
-import { videoBitrateKbps, videoPeakMbps } from '../shared/recording-quality.js';
+import { videoBitrateKbps, videoPeakMbps, recordingWidth } from '../shared/recording-quality.js';
 import { FrameCache } from './frames.mjs';
 
 export const HELPER = fileURLToPath(new URL('./capture_helper.py', import.meta.url));
@@ -30,7 +30,7 @@ export async function detectEncoder(ffmpeg, settings) {
   if(settings.fps===120) {settings.fps=60;return detectEncoder(ffmpeg,settings);}
   throw new Error('No working H.264 encoder is available. Install Debian’s ffmpeg package.');
 }
-export function width(settings) {return settings.height===480?854:settings.height===720?1280:1920;}
+export function width(settings) {return recordingWidth(settings.height);}
 export function concatLine(file) {return `file '${file.replaceAll("'", "'\\''")}'\n`;}
 export class Recorder {
   constructor({ffmpeg='ffmpeg', python='python3', helper=HELPER, onFailure=()=>{}} = {}) {

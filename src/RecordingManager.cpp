@@ -22,6 +22,9 @@ OperationResult RecordingManager::Initialize() {
 
 OperationResult RecordingManager::Start(RecordingSettings& settings) {
     if (state_ != RecorderState::Idle) return OperationResult::Failure(L"A recording is already active.");
+    settings.height = NormalizeRecordingHeight(settings.height);
+    settings.width = RecordingWidth(settings.height);
+    settings.fps = NormalizeRecordingFps(settings.height, settings.fps);
     settings.bitrateMbps = NormalizeBitrateMbps(settings.bitrateMbps);
     const auto source = ResolveCaptureTarget(settings.captureTarget);
     if (!source.ok) return source;
@@ -31,7 +34,7 @@ OperationResult RecordingManager::Start(RecordingSettings& settings) {
         sessionFolder_ = output_.NewSessionFolder();
         if (sessionFolder_.empty()) return OperationResult::Failure(L"A temporary recording folder could not be created.");
         segments_.clear(); segmentFailure_.clear(); accumulated_ = {};
-        encoder_ = detector_.Detect(ffmpeg_, sessionFolder_);
+        encoder_ = detector_.Detect(ffmpeg_, sessionFolder_, settings.width, settings.height, settings.fps == 120 ? 60 : settings.fps);
         if (encoder_.name.empty()) return Failure(L"No working H.264 encoder is available in this FFmpeg build.");
         if (settings.fps == 120 && (!encoder_.hardware || !detector_.Supports(ffmpeg_, sessionFolder_, encoder_, settings))) settings.fps = 60;
         settings_ = settings; outputPath_ = output_.NewOutputPath();

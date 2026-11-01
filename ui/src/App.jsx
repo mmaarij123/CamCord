@@ -21,12 +21,9 @@ import LinearProgress from '@mui/material/LinearProgress';
 import { BrandMark, SettingRow, Waveform } from './components.jsx';
 import { isNative, sendToHost, subscribeToHost } from './bridge.js';
 import { INITIAL_STATE, STATE_LABELS, formatElapsed, mergeState, updateSettings, canInstallUpdate } from './recorder-state.js';
+import { RESOLUTIONS, frameRatesForHeight, recordingWidth } from './recording-quality.js';
 const BitrateControl = lazy(() => import('./BitrateControl.jsx'));
 const CaptureSourceControl = lazy(() => import('./CaptureSourceControl.jsx'));
-
-const RESOLUTIONS = [{ height: 480, label: 'SD' }, { height: 720, label: 'HD' }, { height: 1080, label: 'FHD' }];
-const FRAME_RATES = [15, 30, 60];
-const HIGH_FRAME_RATES = [...FRAME_RATES, 120];
 
 export default function App() {
   const [app, setApp] = useState(INITIAL_STATE);
@@ -46,8 +43,8 @@ export default function App() {
   const sourceBusy = sourcePending || app.sourceChanging;
   const settingsDisabled = !idle || !connected || installingUpdate || sourceBusy;
   const elapsed = formatElapsed(app.elapsedSeconds);
-  const frameRates = app.settings.height === 1080 ? HIGH_FRAME_RATES : FRAME_RATES;
-  const width = app.settings.height === 480 ? 854 : app.settings.height === 720 ? 1280 : 1920;
+  const frameRates = frameRatesForHeight(app.settings.height);
+  const width = recordingWidth(app.settings.height);
   const linux = app.platform === 'linux';
   const qualityLabel = `${width} × ${app.settings.height} · ${app.settings.fps} FPS`;
 
@@ -241,7 +238,9 @@ export default function App() {
             <ToggleButtonGroup className="fps-picker" aria-labelledby="fps-label" exclusive fullWidth value={app.settings.fps} disabled={settingsDisabled} onChange={(_, value) => value && changeSettings({ fps: value })}>
               {frameRates.map((fps) => <ToggleButton key={fps} value={fps} aria-label={`${fps} frames per second`}>{fps}</ToggleButton>)}
             </ToggleButtonGroup>
-            <span className="field-hint">120 FPS is available at 1080p with supported hardware.</span>
+            <span className="field-hint">{app.settings.height >= 1440
+              ? '2K and 4K record at 60 FPS and need more GPU power and storage.'
+              : '120 FPS is available at 1080p with supported hardware.'}</span>
           </div>
           <Suspense fallback={<div className="settings-group bitrate-loading" role="status"><span className="field-label">Video bitrate</span><span className="field-hint">Loading bitrate options…</span></div>}>
             <BitrateControl settings={app.settings} disabled={settingsDisabled} onChange={changeSettings} />

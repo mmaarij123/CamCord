@@ -2,6 +2,7 @@
 // Never selects or records a desktop, window, sound device or microphone.
 #include "../src/CaptureEngine.h"
 #include "../src/CaptureSources.h"
+#include "../src/RecordingQuality.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -52,28 +53,36 @@ struct CaptureEngineTestAccess {
         // lossy H.264 decode. Generate at 16x16, then scale without heavy geq work.
         const auto input = L"nullsrc=s=16x16:r=" + std::to_wstring(settings.fps)
             + L",geq=lum='mod(N,20)*10+24':cb=128:cr=128,scale=" + std::to_wstring(settings.width)
-            + L":" + std::to_wstring(settings.height) + L":flags=neighbor,format=yuv420p,realtime";
+            + L":" + std::to_wstring(settings.height) + L":flags=neighbor,format=nv12,realtime";
         const auto args = L"-hide_banner -loglevel warning -f lavfi -i " + QuoteArg(input)
-            + L" -an -c:v rawvideo -threads 1 -fps_mode passthrough -pix_fmt yuv420p -f rawvideo pipe:1";
+            + L" -an -c:v rawvideo -threads 1 -fps_mode passthrough -pix_fmt nv12 -f rawvideo pipe:1";
         return engine.StartStream(ffmpeg, output.wstring(), output.wstring() + L".log", settings, encoder, args);
     }
 };
 
 int wmain(int argc, wchar_t** argv) {
-    if (argc < 3 || argc > 5) return 2;
+    if (argc < 4 || argc > 7) return 2;
     const auto root = fs::absolute(argv[2]);
-    const bool hardware = argc >= 4 && std::wstring(argv[3]) == L"--hardware";
-    const bool live = argc == 5 && std::wstring(argv[4]) == L"--live-window";
+    bool hardware = false, live = false, uhd = false;
+    for (int i = 4; i < argc; ++i) {
+        const std::wstring option = argv[i];
+        if (option == L"--hardware") hardware = true;
+        else if (option == L"--live-window") live = true;
+        else if (option == L"--uhd") uhd = true;
+        else return 2;
+    }
+    if ((live || uhd) && !hardware) return 2;
     try {
         Check(!fs::exists(root), "Supply a fresh performance-test folder"); fs::create_directories(root);
         MovingWindow fixture;
         if (live) fixture.Create();
-        for (const int fps : {60, 120}) {
-            if (fps == 120 && !hardware) continue;
-            RecordingSettings settings; settings.width = hardware ? 1920 : 1280; settings.height = hardware ? 1080 : 720;
+        const std::vector<std::pair<int,int>> profiles = uhd ? std::vector<std::pair<int,int>>{{1440,60},{2160,60}}
+            : hardware ? std::vector<std::pair<int,int>>{{1080,60},{1080,120}} : std::vector<std::pair<int,int>>{{720,60}};
+        for (const auto& [height, fps] : profiles) {
+            RecordingSettings settings; settings.height = height; settings.width = RecordingWidth(height);
             settings.fps = fps; settings.systemAudio = settings.microphone = false;
             const EncoderChoice encoder = hardware ? EncoderChoice{L"h264_nvenc",L"NVIDIA",true} : EncoderChoice{L"libx264",L"Software",false};
-            const auto output = root / (L"pacing-" + std::to_wstring(fps) + L".mp4");
+            const auto output = root / (L"pacing-" + std::to_wstring(height) + L"-" + std::to_wstring(fps) + L".mp4");
             CaptureEngine capture;
             OperationResult result;
             if (live) {
@@ -93,6 +102,13 @@ int wmain(int argc, wchar_t** argv) {
             } else Sleep(4000);
             const auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
             Check(capture.Running() && capture.Stop(15000).ok, "Synthetic frame bridge did not finish cleanly");
+            const auto metadata = output.wstring() + L".metadata";
+            Check(ChildProcess::Run(argv[3], L"-v error -select_streams v:0 -show_entries stream=width,height,avg_frame_rate -of csv=p=0 "
+                + QuoteArg(output.wstring()), metadata) == 0, "Could not inspect recording metadata");
+            std::ifstream metadataFile(metadata); std::string profile; std::getline(metadataFile, profile);
+            if (!profile.empty() && profile.back() == '\r') profile.pop_back();
+            Check(profile == std::to_string(settings.width) + "," + std::to_string(height) + "," + std::to_string(fps) + "/1",
+                "Encoded file has the wrong dimensions or FPS");
             const auto pixels = output.wstring() + L".gray";
             Check(ChildProcess::Run(argv[1], L"-y -hide_banner -loglevel error -xerror -i " + QuoteArg(output.wstring())
                 + L" -vf scale=1:1:flags=area -pix_fmt gray -f rawvideo " + QuoteArg(pixels), output.wstring() + L".decode.log") == 0,

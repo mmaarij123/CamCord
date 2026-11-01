@@ -394,7 +394,9 @@ def main():
         try: print(json.dumps(desktop.sources(args.exclude_pid), ensure_ascii=False))
         finally: desktop.close()
     else:
-        if not args.kind or args.width not in [854, 1280, 1920] or args.height not in [480, 720, 1080] or args.fps not in [15, 30, 60, 120]:
+        if (not args.kind or (args.width, args.height) not in [(854, 480), (1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)]
+                or args.fps not in [15, 30, 60, 120] or (args.height >= 1440 and args.fps != 60)
+                or (args.fps == 120 and args.height != 1080)):
             raise RuntimeError('Invalid recording settings.')
         (capture_portal if args.portal else capture_x11)(args)
 

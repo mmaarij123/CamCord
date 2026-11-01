@@ -116,6 +116,6 @@ std::wstring CaptureInputFilter(const CaptureTarget& target, int fps, int width,
     // Resize on the capture GPU before downloading pixels. This also keeps the
     // canvas stable when a window resizes; aspect ratio and black bars survive.
     if (width && height) filter += L":width=" + std::to_wstring(width) + L":height=" + std::to_wstring(height)
-        + L":resize_mode=scale_aspect:scale_mode=bicubic";
+        + L":resize_mode=scale_aspect:scale_mode=" + (height >= 2160 ? L"bilinear" : L"bicubic");
     return filter;
 }

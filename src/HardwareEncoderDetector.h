@@ -7,7 +7,7 @@ struct EncoderChoice { std::wstring name; std::wstring label; bool hardware = fa
 
 class HardwareEncoderDetector {
 public:
-    EncoderChoice Detect(const std::wstring& ffmpeg, const std::wstring& workingFolder);
+    EncoderChoice Detect(const std::wstring& ffmpeg, const std::wstring& workingFolder, int width = 640, int height = 360, int fps = 30);
     bool Supports(const std::wstring& ffmpeg, const std::wstring& folder, const EncoderChoice& encoder, const RecordingSettings& settings);
 private:
     bool Probe(const std::wstring& ffmpeg, const std::wstring& folder, const std::wstring& encoder, int width, int height, int fps);

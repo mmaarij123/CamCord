@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.0 — 2026-11-01
+
+- Added 2K (2560 × 1440) and 4K (3840 × 2160) recording at 60 FPS on Windows and Debian.
+- Added 32/64 Mbps Auto video targets, matching storage warnings/estimates and remembered quality preferences.
+- Updated the resolution picker to fit all five options and check encoder capabilities at the selected output size.
+- Avoided enlarging smaller sources before raw-frame transfer, improving high-resolution recording throughput.
+- Added high-resolution settings, actual encoded-file metadata and GPU capture tests.
+- Made preference saves tolerate short-lived Windows file locks while preserving atomic replacement and existing settings on failure.
+
 ## 1.8.3 — 2026-10-27
 
 - Improved Windows frame pacing with a precise waitable timer and a small, bounded jitter buffer.

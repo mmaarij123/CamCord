@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <sstream>
 #include <vector>
+#include <atomic>
 
 std::wstring SettingsManager::SettingsPath() const {
     if (!pathOverride_.empty()) return pathOverride_;
@@ -28,11 +29,10 @@ RecordingSettings SettingsManager::Load() const {
     RecordingSettings s;
     const auto path = SettingsPath();
     s.height = GetPrivateProfileIntW(L"Recording", L"Height", 1080, path.c_str());
-    if (s.height != 480 && s.height != 720 && s.height != 1080) s.height = 1080;
-    s.width = s.height == 480 ? 854 : (s.height == 720 ? 1280 : 1920);
+    s.height = NormalizeRecordingHeight(s.height);
+    s.width = RecordingWidth(s.height);
     s.fps = GetPrivateProfileIntW(L"Recording", L"Fps", 60, path.c_str());
-    if (s.fps != 15 && s.fps != 30 && s.fps != 60 && s.fps != 120) s.fps = 60;
-    if (s.fps == 120 && s.height != 1080) s.fps = 60;
+    s.fps = NormalizeRecordingFps(s.height, s.fps);
     wchar_t bitrate[64]{};
     GetPrivateProfileStringW(L"Recording", L"BitrateMbps", L"0", bitrate, 64, path.c_str());
     s.bitrateMbps = BitrateFromPreference(bitrate);
@@ -55,16 +55,33 @@ OperationResult SettingsManager::Save(const RecordingSettings& s) const {
         << L"\r\nSystemAudio=" << (s.systemAudio ? 1 : 0) << L"\r\nMicrophone=" << (s.microphone ? 1 : 0)
         << L"\r\nOutputFolder=" << s.outputFolder << L"\r\n[Application]\r\nAutoCheckUpdates=" << (s.autoCheckUpdates ? 1 : 0) << L"\r\n";
     const auto text = content.str();
-    const auto temporary = path + L"." + std::to_wstring(GetCurrentProcessId()) + L".tmp";
-    HANDLE file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) return OperationResult::Failure(L"Recording settings could not be saved.");
+    static std::atomic<unsigned long long> serial{0};
+    std::wstring temporary;
+    HANDLE file = INVALID_HANDLE_VALUE;
+    for (int attempt = 0; attempt < 16; ++attempt) {
+        temporary = path + L"." + std::to_wstring(GetCurrentProcessId()) + L"." + std::to_wstring(++serial) + L".tmp";
+        file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file != INVALID_HANDLE_VALUE || GetLastError() != ERROR_FILE_EXISTS) break;
+    }
+    if (file == INVALID_HANDLE_VALUE) return OperationResult::Failure(L"Recording settings could not be saved. Windows error: " + std::to_wstring(GetLastError()));
     DWORD written = 0;
     const DWORD bytes = static_cast<DWORD>(text.size() * sizeof(wchar_t));
     const bool ok = WriteFile(file, text.data(), bytes, &written, nullptr) && written == bytes && FlushFileBuffers(file);
+    const DWORD writeError = ok ? ERROR_SUCCESS : GetLastError();
     CloseHandle(file);
-    if (!ok || !MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    bool published = false;
+    DWORD moveError = ERROR_SUCCESS;
+    if (ok) for (int attempt = 0; attempt < 5; ++attempt) {
+        if (MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { published = true; break; }
+        moveError = GetLastError();
+        // INI readers and scanners can briefly hold the previous file open.
+        // Preserve atomic replacement; never delete the old preferences first.
+        if (moveError != ERROR_SHARING_VIOLATION && moveError != ERROR_LOCK_VIOLATION && moveError != ERROR_ACCESS_DENIED) break;
+        if (attempt < 4) Sleep(10u << attempt);
+    }
+    if (!ok || !published) {
         DeleteFileW(temporary.c_str());
-        return OperationResult::Failure(L"Recording settings could not be saved.");
+        return OperationResult::Failure(L"Recording settings could not be saved. Windows error: " + std::to_wstring(ok ? moveError : writeError));
     }
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
     return OperationResult::Success();

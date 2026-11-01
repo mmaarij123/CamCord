@@ -3,6 +3,7 @@
 #include "CaptureSources.h"
 #include <atomic>
 #include <array>
+#include <algorithm>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -57,17 +58,24 @@ OperationResult CaptureEngine::Start(const std::wstring& ffmpeg, const std::wstr
     auto target = settings.captureTarget;
     const auto available = ResolveCaptureTarget(target);
     if (!available.ok) return available;
+    // Upscaling a small source before GPU download wastes capture/pipe bandwidth.
+    // Keep its initial native detail across the bridge and scale once at encode.
+    const double ratio = std::min(1.0, std::max(double(target.sourceWidth) / settings.width, double(target.sourceHeight) / settings.height));
+    const int inputWidth = std::max(16, int(settings.width * ratio) / 2 * 2);
+    const int inputHeight = std::max(16, int(settings.height * ratio) / 2 * 2);
     const auto sourceArgs = L"-hide_banner -loglevel warning -f lavfi -i "
-        + QuoteArg(CaptureInputFilter(target, settings.fps, settings.width, settings.height))
-        + L" -an -vf hwdownload,format=bgra,format=yuv420p -c:v rawvideo -threads 1 -fps_mode passthrough -pix_fmt yuv420p -f rawvideo pipe:1";
-    return StartStream(ffmpeg, output, log, settings, encoder, sourceArgs);
+        + QuoteArg(CaptureInputFilter(target, settings.fps, inputWidth, inputHeight))
+        + L" -an -vf hwdownload,format=bgra,format=nv12 -c:v rawvideo -threads 1 -fps_mode passthrough -pix_fmt nv12 -f rawvideo pipe:1";
+    return StartStream(ffmpeg, output, log, settings, encoder, sourceArgs, inputWidth, inputHeight);
 }
 
 OperationResult CaptureEngine::StartStream(const std::wstring& ffmpeg, const std::wstring& output, const std::wstring& log,
-    const RecordingSettings& settings, const EncoderChoice& encoder, const std::wstring& sourceArgs) {
+    const RecordingSettings& settings, const EncoderChoice& encoder, const std::wstring& sourceArgs, int inputWidth, int inputHeight) {
+    if (!inputWidth) inputWidth = settings.width;
+    if (!inputHeight) inputHeight = settings.height;
     // H.264 already uses 4:2:0. This cuts each pipe transfer and reusable frame
     // buffer by 62.5% versus BGRA, without changing output color depth.
-    const auto frameBytes = static_cast<DWORD>(settings.width * settings.height * 3 / 2);
+    const auto frameBytes = static_cast<DWORD>(inputWidth * inputHeight * 3 / 2);
     bridge_ = std::make_unique<StreamBridge>();
     auto stream = bridge_.get();
     if (!stream->wake || !stream->timer) { bridge_.reset(); return OperationResult::Failure(L"The recording timer could not be created."); }
@@ -119,9 +127,12 @@ OperationResult CaptureEngine::StartStream(const std::wstring& ffmpeg, const std
         stream->changed.wait_for(lock, std::chrono::nanoseconds(1000000000ll / settings.fps),
             [stream] { return stream->pending.size() >= 2 || stream->failed; });
     }
-    const auto dimensions = std::to_wstring(settings.width) + L"x" + std::to_wstring(settings.height);
-    const auto encoderArgs = L"-y -hide_banner -loglevel warning -probesize 32 -analyzeduration 0 -f rawvideo -pixel_format yuv420p -video_size " + dimensions
+    const auto dimensions = std::to_wstring(inputWidth) + L"x" + std::to_wstring(inputHeight);
+    const auto scaling = inputWidth == settings.width && inputHeight == settings.height ? L""
+        : L" -vf scale=" + std::to_wstring(settings.width) + L":" + std::to_wstring(settings.height) + L":flags=bilinear";
+    const auto encoderArgs = L"-y -hide_banner -loglevel warning -probesize 32 -analyzeduration 0 -f rawvideo -pixel_format nv12 -video_size " + dimensions
         + L" -framerate " + std::to_wstring(settings.fps) + L" -i pipe:0" + VideoEncodingArguments(settings, encoder)
+        + scaling
         + L" -movflags +frag_keyframe+empty_moov+default_base_moof -flush_packets 1 " + QuoteArg(output);
     if (!process_.Start(ffmpeg, encoderArgs, log, true, nullptr, true)) { bridge_.reset(); return OperationResult::Failure(L"The video encoder could not be started."); }
     startedAt_ = std::chrono::steady_clock::now();

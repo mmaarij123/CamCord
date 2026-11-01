@@ -30,6 +30,11 @@ int wmain(int argc, wchar_t** argv) {
             Check(VideoBitrateKbps(settings) == expected[row][col], "Auto bitrate regressed");
         }
         std::cout << "PASS: original Auto targets and invalid bitrate normalization\n";
+        for (const int height : {1440, 2160}) {
+            settings.height = height; settings.width = RecordingWidth(height); settings.fps = 60; settings.bitrateMbps = 0;
+            Check(VideoBitrateKbps(settings) == (height == 1440 ? 32000 : 64000), "High-resolution Auto bitrate is wrong");
+            Check(VideoPeakBitrateKbps(settings) <= MAX_VIDEO_BITRATE_KBPS, "High-resolution peak exceeds bitrate ceiling");
+        }
         settings.height = argc == 4 ? 1080 : 720;
         settings.width = argc == 4 ? 1920 : 1280;
         settings.fps = argc == 4 ? 60 : 30;

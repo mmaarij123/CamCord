@@ -18,7 +18,8 @@ public:
 private:
     friend struct CaptureEngineTestAccess;
     OperationResult StartStream(const std::wstring& ffmpeg, const std::wstring& output, const std::wstring& log,
-        const RecordingSettings& settings, const EncoderChoice& encoder, const std::wstring& sourceArgs);
+        const RecordingSettings& settings, const EncoderChoice& encoder, const std::wstring& sourceArgs,
+        int inputWidth = 0, int inputHeight = 0);
     struct StreamBridge;
     ChildProcess process_;
     std::unique_ptr<StreamBridge> bridge_;
